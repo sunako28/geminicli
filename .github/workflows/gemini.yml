@@ -1,45 +1,80 @@
-# .github/workflows/gemini-corrected.yml
-name: Gemini Corrected Version
+# .github/workflows/gemini-comment-handler.yml
+name: Gemini Comment Handler
 
 on:
-  workflow_dispatch:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
 
 jobs:
-  gemini-test:
+  handle-gemini-comment:
+    # @gemini で始まるコメントのみ処理
+    if: startsWith(github.event.comment.body, '@gemini')
     runs-on: ubuntu-latest
     permissions:
       contents: read
       issues: write
+      pull-requests: write
     
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
       
-      - name: Run Gemini CLI Action
+      - name: Process Gemini Comment
         uses: google-gemini/gemini-cli-action@main
         env:
           GH_TOKEN: ${{ github.token }}
         with:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           prompt: |
-            このリポジトリを分析して、以下の形式でGitHub Issueを作成してください：
-            
-            **タイトル**: ✅ Gemini CLI 動作確認完了
-            
-            **内容**:
-            ### 🎉 テスト結果
-            - Gemini CLI Actionが正常に動作しました
-            - API認証: 成功
-            - Issue作成機能: 正常
-            
-            ### 📋 次のステップ
-            - [ ] コメント反応機能のテスト
-            - [ ] Google Analytics MCP連携準備
-            - [ ] 定期実行スケジュールの設定
-            
-            ### 🔧 設定情報
-            - Gemini CLI Version: 最新
-            - 実行日時: $(date)
+            ## コンテキスト情報
+            - コメント投稿者: ${{ github.event.comment.user.login }}
             - リポジトリ: ${{ github.repository }}
+            - イベントタイプ: ${{ github.event_name }}
+            - コメントURL: ${{ github.event.comment.html_url }}
             
-            このIssueを今すぐ作成してください。
+            ## ユーザーの質問/依頼
+            ```
+            ${{ github.event.comment.body }}
+            ```
+
+            ## 実行指示
+            1. GEMINI.mdを確認してプロジェクトを理解
+            2. ユーザーのコメント（@gemini以降）を分析
+            3. 以下のカテゴリに応じて適切に対応：
+
+            ### 📊 分析依頼の場合
+            - コードやファイルの分析
+            - パフォーマンスの評価
+            - セキュリティチェック
+            - 改善提案の生成
+
+            ### 🐛 問題解決依頼の場合
+            - エラーの原因調査
+            - バグの特定と修正案
+            - トラブルシューティング手順
+
+            ### 💡 実装提案依頼の場合
+            - 新機能の実装方法
+            - コード例の提供
+            - ベストプラクティスの提案
+
+            ### ❓ 一般的な質問の場合
+            - 技術的な説明
+            - プロジェクト固有の情報
+            - ドキュメントの案内
+
+            ## 回答の形式
+            - 具体的で実装可能な内容
+            - GEMINI.mdの基準に準拠
+            - コードスニペット（必要に応じて）
+            - 次のステップや参考情報
+
+            ## 特別な指示
+            - コードレビューの場合は、具体的な改善点を明示
+            - セキュリティ関連は慎重に回答
+            - 不明な点は素直に「分からない」と回答
+            - 長い回答の場合は要点を最初に記載
+
+            この要求に今すぐ適切に回答してください。コメントとして投稿してください。
