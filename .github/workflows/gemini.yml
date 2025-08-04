@@ -1,20 +1,43 @@
-# .github/workflows/gemini-minimal-test.yml
-name: Gemini Minimal Test
+# .github/workflows/gemini-corrected.yml
+name: Gemini Corrected Version
 
 on:
   workflow_dispatch:
 
 jobs:
-  test:
+  gemini-test:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       issues: write
     
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
       
-      - uses: google-gemini/gemini-cli-action@main
+      - name: Run Gemini CLI Action
+        uses: google-gemini/gemini-cli-action@main
         with:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          prompt: "Hello! このリポジトリの README.md を確認して、プロジェクトについて簡単に説明してください。"
+          prompt: |
+            このリポジトリを分析して、以下の形式でGitHub Issueを作成してください：
+            
+            **タイトル**: ✅ Gemini CLI 動作確認完了
+            
+            **内容**:
+            ### 🎉 テスト結果
+            - Gemini CLI Actionが正常に動作しました
+            - API認証: 成功
+            - Issue作成機能: 正常
+            
+            ### 📋 次のステップ
+            - [ ] コメント反応機能のテスト
+            - [ ] Google Analytics MCP連携準備
+            - [ ] 定期実行スケジュールの設定
+            
+            ### 🔧 設定情報
+            - Gemini CLI Version: 最新
+            - 実行日時: $(date)
+            - リポジトリ: ${{ github.repository }}
+            
+            このIssueを今すぐ作成してください。
