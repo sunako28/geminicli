@@ -1,5 +1,5 @@
 # .github/workflows/gemini-comment-handler.yml
-name: Gemini Comment Handler test
+name: Gemini Comment Handler
 
 on:
   issue_comment:
