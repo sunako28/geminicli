@@ -1,4 +1,3 @@
-# .github/workflows/gemini-comment-handler.yml
 name: Gemini Comment Handler
 
 on:
