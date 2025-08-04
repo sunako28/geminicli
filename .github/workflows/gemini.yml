@@ -1,17 +1,15 @@
-name: Gemini CLI Action
+# .github/workflows/gemini-basic.yml
+name: Gemini CLI Basic Test
 
 on:
+  workflow_dispatch:  # 手動実行のみ（テスト用）
   issues:
     types: [opened, reopened]
   issue_comment:
     types: [created]
-  pull_request:
-    types: [opened, reopened]
-  pull_request_review_comment:
-    types: [created]
 
 jobs:
-  gemini:
+  gemini-basic:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -24,6 +22,15 @@ jobs:
       
       - name: Run Gemini CLI Action
         uses: google-gemini/gemini-cli-action@main
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
+          prompt: |
+            このリポジトリのGEMINI.mdファイルを確認して、プロジェクトの概要を理解してください。
+            その後、現在のコードベースに対する一般的な改善提案を1つ作成して、
+            GitHub Issueとして投稿してください。
+            
+            提案内容：
+            - 具体的で実装可能な内容
+            - 優先度と工数の目安
+            - 期待される効果
