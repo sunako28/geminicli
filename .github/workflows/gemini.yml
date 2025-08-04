@@ -17,6 +17,8 @@ jobs:
       
       - name: Run Gemini CLI Action
         uses: google-gemini/gemini-cli-action@main
+        env:
+          GH_TOKEN: ${{ github.token }}
         with:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           prompt: |
