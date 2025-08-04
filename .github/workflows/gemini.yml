@@ -1,36 +1,20 @@
-# .github/workflows/gemini-basic.yml
-name: Gemini CLI Basic Test
+# .github/workflows/gemini-minimal-test.yml
+name: Gemini Minimal Test
 
 on:
-  workflow_dispatch:  # 手動実行のみ（テスト用）
-  issues:
-    types: [opened, reopened]
-  issue_comment:
-    types: [created]
+  workflow_dispatch:
 
 jobs:
-  gemini-basic:
+  test:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       issues: write
-      pull-requests: write
     
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       
-      - name: Run Gemini CLI Action
-        uses: google-gemini/gemini-cli-action@main
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      - uses: google-gemini/gemini-cli-action@main
         with:
-          prompt: |
-            このリポジトリのGEMINI.mdファイルを確認して、プロジェクトの概要を理解してください。
-            その後、現在のコードベースに対する一般的な改善提案を1つ作成して、
-            GitHub Issueとして投稿してください。
-            
-            提案内容：
-            - 具体的で実装可能な内容
-            - 優先度と工数の目安
-            - 期待される効果
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          prompt: "Hello! このリポジトリの README.md を確認して、プロジェクトについて簡単に説明してください。"
