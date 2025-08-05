@@ -1,14 +1,35 @@
-# .github/workflows/issue-auto-response.yml
-name: Issue Auto Response
+# .github/workflows/ga4-web-analysis.yml
+name: GA4 MCP Web Analysis
 
 on:
-  issues:
-    types: [opened, reopened, edited]
+  workflow_dispatch:
+    inputs:
+      analysis_type:
+        description: '分析タイプ'
+        required: false
+        default: 'daily'
+        type: choice
+        options:
+        - 'daily'
+        - 'weekly'
+        - 'monthly'
+        - 'custom'
+      date_range:
+        description: '分析期間（YYYY-MM-DD,YYYY-MM-DD）'
+        required: false
+        default: 'yesterday,yesterday'
+  schedule:
+    # 毎日午前10時（JST）に実行
+    - cron: '0 1 * * *'  # UTC 1:00 = JST 10:00
   issue_comment:
     types: [created]
 
 jobs:
-  auto-respond-to-issue:
+  ga4-analysis:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@gemini analytics'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -19,162 +40,252 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         
-      - name: Analyze and Respond to Issue
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          
+      - name: Install Google Analytics Dependencies
+        run: |
+          npm install @google-analytics/data
+          npm install googleapis
+          
+      - name: GA4 MCP Web Analysis
         uses: google-gemini/gemini-cli-action@main
         env:
           GH_TOKEN: ${{ github.token }}
+          GOOGLE_ANALYTICS_PROPERTY_ID: ${{ secrets.GA_PROPERTY_ID }}
+          GOOGLE_ANALYTICS_CREDENTIALS: ${{ secrets.GA_CREDENTIALS }}
         with:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          settings_json: |
+            {
+              "mcps": [
+                {
+                  "name": "google-analytics",
+                  "command": "npx",
+                  "args": ["@google-analytics/mcp-server"],
+                  "env": {
+                    "GOOGLE_ANALYTICS_PROPERTY_ID": "${{ secrets.GA_PROPERTY_ID }}",
+                    "GOOGLE_ANALYTICS_CREDENTIALS": "${{ secrets.GA_CREDENTIALS }}"
+                  }
+                }
+              ]
+            }
           prompt: |
-            GitHub Issueの内容を分析して、適切な対応を行ってください。
+            Google Analytics MCPを使用してWebサイトの包括的な分析を実行してください。
             
-            ## Issue情報
-            - **Issue番号**: #${{ github.event.issue.number }}
-            - **タイトル**: "${{ github.event.issue.title }}"
-            - **作成者**: @${{ github.event.issue.user.login }}
-            - **作成日時**: ${{ github.event.issue.created_at }}
-            - **イベント**: ${{ github.event.action }}
+            ## 実行情報
+            - **実行タイプ**: ${{ github.event_name }}
+            - **分析期間**: ${{ github.event.inputs.date_range || 'yesterday,yesterday' }}
+            - **分析タイプ**: ${{ github.event.inputs.analysis_type || 'daily' }}
+            - **実行時刻**: ${{ github.run_started_at }}
             
-            ## Issue内容
-            ```
-            ${{ github.event.issue.body }}
-            ```
+            ## Google Analytics MCP 分析手順
             
-            ## 対応方針
-            以下の観点でIssueを分析し、適切な対応を実行してください：
+            ### Step 1: 基本メトリクス取得
+            以下のメトリクスを取得してください：
             
-            ### 1. Issue分類の判定
-            - **🐛 Bug Report**: バグ報告
-            - **✨ Feature Request**: 機能要望
-            - **❓ Question**: 質問・サポート
-            - **📚 Documentation**: ドキュメント関連
-            - **🔧 Task**: 作業・タスク
-            - **🚀 Enhancement**: 改善提案
+            ```javascript
+            // ページビュー分析
+            const pageViews = await getPageViews('yesterday', 'yesterday', ['pagePath', 'pageTitle']);
             
-            ### 2. 対応パターンの選択
+            // アクティブユーザー分析
+            const activeUsers = await getActiveUsers('yesterday', 'yesterday');
             
-            #### パターンA: バグ報告の場合
-            - 再現手順の確認
-            - 環境情報の収集
-            - 原因の分析
-            - 修正方法の提案
-            - 優先度の設定
+            // ユーザー行動分析
+            const userBehavior = await getUserBehavior('yesterday', 'yesterday');
             
-            #### パターンB: 機能要望の場合
-            - 要望の詳細確認
-            - 実装可能性の評価
-            - 設計案の提案
-            - 必要なリソースの見積もり
-            - ロードマップへの位置づけ
-            
-            #### パターンC: 質問・サポートの場合
-            - 質問内容の理解
-            - 回答・解決策の提供
-            - 関連ドキュメントの案内
-            - 追加質問への対応準備
-            
-            #### パターンD: ドキュメント関連の場合
-            - 不足している情報の特定
-            - 改善案の提案
-            - 更新すべきファイルの特定
-            - 構造改善の提案
-            
-            #### パターンE: タスク・作業の場合
-            - 作業内容の詳細化
-            - 実装手順の提案
-            - 必要なスキル・リソースの特定
-            - チェックリストの作成
-            
-            ## 実行指示
-            
-            ### Step 1: ラベル付けの提案
-            Issue内容に基づいて適切なラベルを提案し、以下のコマンドでラベルを追加：
-            
-            ```bash
-            gh issue edit ${{ github.event.issue.number }} --add-label "[適切なラベル名]"
+            // イベント分析
+            const events = await getEvents('yesterday', 'yesterday');
             ```
             
-            ### Step 2: 詳細な対応コメントの投稿
-            以下のフォーマットでコメントを投稿：
+            ### Step 2: 詳細分析の実行
+            ```javascript
+            // デバイス別分析
+            const deviceAnalysis = await runReport({
+              dateRanges: [{ startDate: 'yesterday', endDate: 'yesterday' }],
+              dimensions: [{ name: 'deviceCategory' }],
+              metrics: [
+                { name: 'activeUsers' },
+                { name: 'sessions' },
+                { name: 'bounceRate' },
+                { name: 'averageSessionDuration' }
+              ]
+            });
             
-            ```bash
-            gh issue comment ${{ github.event.issue.number }} --body "🤖 **自動分析結果**
+            // 流入経路分析
+            const trafficSources = await runReport({
+              dateRanges: [{ startDate: 'yesterday', endDate: 'yesterday' }],
+              dimensions: [{ name: 'sessionDefaultChannelGroup' }],
+              metrics: [
+                { name: 'sessions' },
+                { name: 'newUsers' },
+                { name: 'conversions' }
+              ]
+            });
             
-            @${{ github.event.issue.user.login }} さん、Issueを作成いただきありがとうございます！
+            // 地域別分析
+            const geoAnalysis = await runReport({
+              dateRanges: [{ startDate: 'yesterday', endDate: 'yesterday' }],
+              dimensions: [{ name: 'country' }],
+              metrics: [{ name: 'activeUsers' }, { name: 'sessions' }],
+              orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
+              limit: 10
+            });
+            ```
             
-            ## 📋 Issue分析
-            - **分類**: [判定した分類]
-            - **優先度**: [高/中/低]
-            - **複雑度**: [複雑/普通/単純]
-            - **推定工数**: [X時間/X日]
+            ### Step 3: 前期比較分析
+            ```javascript
+            // 前日比較
+            const previousDay = await getPageViews('2daysAgo', '2daysAgo');
             
-            ## 🔍 内容理解
-            [Issue内容の要約と理解した内容]
+            // 前週比較  
+            const previousWeek = await getPageViews('8daysAgo', '8daysAgo');
             
-            ## 💡 対応方針・提案
-            [具体的な対応方針や解決策の提案]
+            // 前月比較
+            const previousMonth = await getPageViews('1monthAgo', '1monthAgo');
+            ```
             
-            ### 📝 次のステップ
-            - [ ] [具体的なアクション1]
-            - [ ] [具体的なアクション2]
-            - [ ] [具体的なアクション3]
+            ## 分析結果のIssue作成
             
-            ### 🔧 技術的詳細
-            [技術的な実装方法や調査が必要な場合]
+            上記の分析結果を基に、以下のフォーマットでGitHub Issueを作成してください：
             
-            ### 📚 参考資料
-            [関連するドキュメントやリンク]
+            **タイトル**: 📊 GA4分析レポート - ${{ github.run_started_at }}
             
-            ## ❓ 追加で必要な情報
-            [もし不足している情報があれば]
-            - [必要な情報1]
-            - [必要な情報2]
+            **内容**:
+            ```markdown
+            # 📊 Google Analytics 4 分析レポート
             
-            ## 🚀 自動対応可能な作業
-            [Geminiが自動で実行できる作業があれば提案]
+            > **分析期間**: ${{ github.event.inputs.date_range || 'yesterday' }}  
+            > **実行日時**: ${{ github.run_started_at }}  
+            > **分析タイプ**: ${{ github.event.inputs.analysis_type || 'daily' }}
+            
+            ## 🎯 主要指標サマリー
+            
+            ### 📈 基本メトリクス
+            | 指標 | 値 | 前日比 | 前週比 |
+            |------|----|----|----| 
+            | ページビュー | [数値] | [±X%] | [±X%] |
+            | セッション数 | [数値] | [±X%] | [±X%] |
+            | アクティブユーザー | [数値] | [±X%] | [±X%] |
+            | 直帰率 | [X%] | [±X%] | [±X%] |
+            | 平均セッション時間 | [X分Y秒] | [±X%] | [±X%] |
+            
+            ### 🔍 パフォーマンスハイライト
+            - **最高パフォーマンス**: [最も成果の良かった項目]
+            - **注意が必要**: [改善が必要な項目]
+            - **新しいトレンド**: [新たに発見された傾向]
+            
+            ## 📱 デバイス別分析
+            
+            | デバイス | ユーザー数 | セッション数 | 直帰率 | 平均セッション時間 |
+            |---------|-----------|------------|--------|------------------|
+            | デスクトップ | [数値] | [数値] | [X%] | [X分Y秒] |
+            | モバイル | [数値] | [数値] | [X%] | [X分Y秒] |
+            | タブレット | [数値] | [数値] | [X%] | [X分Y秒] |
+            
+            ### 📊 デバイス別インサイト
+            - [デバイス別の特徴的な傾向]
+            - [モバイル最適化の状況]
+            - [デバイス別の改善提案]
+            
+            ## 🌐 流入経路分析
+            
+            | チャネル | セッション数 | 新規ユーザー | コンバージョン |
+            |---------|------------|------------|--------------|
+            | オーガニック検索 | [数値] | [数値] | [数値] |
+            | ダイレクト | [数値] | [数値] | [数値] |
+            | ソーシャル | [数値] | [数値] | [数値] |
+            | リファラル | [数値] | [数値] | [数値] |
+            
+            ### 🎯 流入経路インサイト
+            - [最も効果的なチャネル]
+            - [成長しているチャネル]
+            - [改善が必要なチャネル]
+            
+            ## 🗺️ 地域別分析（上位10位）
+            
+            | 国/地域 | ユーザー数 | セッション数 |
+            |---------|-----------|------------|
+            | [国名1] | [数値] | [数値] |
+            | [国名2] | [数値] | [数値] |
+            | ... | ... | ... |
+            
+            ## 📄 人気ページ分析
+            
+            | ページ | ページビュー | ユニークページビュー | 平均滞在時間 |
+            |--------|-------------|---------------------|--------------|
+            | [ページ1] | [数値] | [数値] | [X分Y秒] |
+            | [ページ2] | [数値] | [数値] | [X分Y秒] |
+            | ... | ... | ... | ... |
+            
+            ## 🎛️ イベント分析
+            
+            | イベント名 | 発生回数 | ユニークユーザー |
+            |-----------|---------|-----------------|
+            | [イベント1] | [数値] | [数値] |
+            | [イベント2] | [数値] | [数値] |
+            | ... | ... | ... |
+            
+            ## 🚨 アラート・注意事項
+            
+            ### 🔴 緊急対応が必要
+            - [緊急に対応すべき項目]
+            
+            ### 🟡 監視が必要
+            - [継続的に監視すべき項目]
+            
+            ### 🟢 好調な項目
+            - [良好な状態の項目]
+            
+            ## 💡 改善提案
+            
+            ### 🎯 短期改善（1週間以内）
+            1. **[改善項目1]**
+               - 現状: [現在の状況]
+               - 提案: [具体的な改善案]
+               - 期待効果: [予想される効果]
+               - 実装工数: [必要な工数]
+            
+            2. **[改善項目2]**
+               - 現状: [現在の状況]
+               - 提案: [具体的な改善案]
+               - 期待効果: [予想される効果]
+               - 実装工数: [必要な工数]
+            
+            ### 🚀 中長期改善（1ヶ月以内）
+            1. **[改善項目3]**
+               - 背景: [改善が必要な理由]
+               - 提案: [具体的な改善案]
+               - 期待効果: [予想される効果]
+               - 実装工数: [必要な工数]
+            
+            ## 📋 次回分析での確認事項
+            - [ ] [前回提案した改善の効果測定]
+            - [ ] [新しい指標の追加監視]
+            - [ ] [特定期間のトレンド確認]
+            
+            ## 🔗 詳細データ
+            [必要に応じて、より詳細なデータやグラフへのリンク]
             
             ---
             
-            ### 🤖 利用可能なコマンド
-            - \`@gemini このIssueを詳しく分析して\`
-            - \`@gemini 実装方法を提案して\`
-            - \`@gemini 類似のIssueを検索して\`
-            - \`@gemini テストケースを作成して\`
-            - \`@gemini ドキュメントを更新して\`
+            ### 🤖 自動分析について
+            この分析は Google Analytics MCP を使用して自動生成されました。
             
-            何かご質問があれば、お気軽にコメントでお声がけください！"
+            **カスタム分析の依頼**:
+            - `@gemini analytics 詳細` - より詳しい分析
+            - `@gemini analytics compare [期間]` - 期間比較分析
+            - `@gemini analytics funnel` - コンバージョンファネル分析
+            - `@gemini analytics cohort` - コホート分析
             ```
             
-            ### Step 3: 自動対応可能な場合の追加アクション
+            ## 実行の注意事項
+            - Google Analytics MCP が正常に動作しない場合は、設定を確認してエラー報告
+            - データが取得できない場合は、代替案を提示
+            - 分析結果は統計的有意性を考慮して解釈
+            - 個人を特定できる情報は含めない
+            - すべての数値は実際のデータに基づいて記載
             
-            もしIssueの内容が以下に該当する場合、自動で対応を実行：
-            
-            #### 📚 ドキュメント要求の場合
-            - README更新の提案
-            - 新しいドキュメントファイルの作成
-            - API仕様書の生成
-            
-            #### 🧪 テスト関連の場合
-            - テストケースの提案
-            - テストファイルのテンプレート作成
-            
-            #### 🔧 設定・構成の場合
-            - 設定ファイルのテンプレート作成
-            - GitHub Actionsワークフローの提案
-            
-            ## 特別な対応ルール
-            
-            ### 緊急度の判定
-            以下のキーワードが含まれる場合は高優先度として扱う：
-            - "urgent", "critical", "broken", "not working"
-            - "production", "live", "customer", "security"
-            - "緊急", "重要", "至急", "本番", "障害"
-            
-            ### 自動クローズ条件
-            以下の場合は適切な説明とともに自動クローズを提案：
-            - 重複Issue
-            - 情報不足で対応不可能
-            - プロジェクト範囲外
-            
-            ## 実行開始
-            今すぐ上記の分析と対応を実行してください。GEMINI.mdの内容も参考にして、プロジェクトの方針に沿った対応を行ってください。
+            今すぐこの分析を実行して、Issue を作成してください。
