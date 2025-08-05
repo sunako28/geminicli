@@ -1,5 +1,5 @@
-# .github/workflows/ga4-web-analysis.yml
-name: GA4 MCP Web Analysis
+# .github/workflows/ga4-web-analysis-fixed.yml
+name: GA4 Web Analysis (Fixed)
 
 on:
   workflow_dispatch:
@@ -14,13 +14,9 @@ on:
         - 'weekly'
         - 'monthly'
         - 'custom'
-      date_range:
-        description: '分析期間（YYYY-MM-DD,YYYY-MM-DD）'
-        required: false
-        default: 'yesterday,yesterday'
   schedule:
     # 毎日午前10時（JST）に実行
-    - cron: '0 1 * * *'  # UTC 1:00 = JST 10:00
+    - cron: '0 1 * * *'
   issue_comment:
     types: [created]
 
@@ -40,15 +36,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         
-      - name: Setup Node.js
+      - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'  # ← Node.js 20に変更
+          
+      - name: Verify Node.js Version
+        run: |
+          echo "Node.js version: $(node --version)"
+          echo "npm version: $(npm --version)"
           
       - name: Install Google Analytics Dependencies
         run: |
-          npm install @google-analytics/data
-          npm install googleapis
+          npm install @google-analytics/data@^4.0.0
+          npm install googleapis@^128.0.0
           
       - name: GA4 MCP Web Analysis
         uses: google-gemini/gemini-cli-action@main
@@ -63,8 +64,8 @@ jobs:
               "mcps": [
                 {
                   "name": "google-analytics",
-                  "command": "npx",
-                  "args": ["@google-analytics/mcp-server"],
+                  "command": "node",
+                  "args": ["mcp-analytics-server.js"],
                   "env": {
                     "GOOGLE_ANALYTICS_PROPERTY_ID": "${{ secrets.GA_PROPERTY_ID }}",
                     "GOOGLE_ANALYTICS_CREDENTIALS": "${{ secrets.GA_CREDENTIALS }}"
@@ -73,219 +74,101 @@ jobs:
               ]
             }
           prompt: |
-            Google Analytics MCPを使用してWebサイトの包括的な分析を実行してください。
+            Google Analytics MCPを使用してWebサイトの分析を実行してください。
             
             ## 実行情報
+            - **Node.js バージョン**: 20
             - **実行タイプ**: ${{ github.event_name }}
-            - **分析期間**: ${{ github.event.inputs.date_range || 'yesterday,yesterday' }}
             - **分析タイプ**: ${{ github.event.inputs.analysis_type || 'daily' }}
             - **実行時刻**: ${{ github.run_started_at }}
             
-            ## Google Analytics MCP 分析手順
+            ## 分析手順
             
-            ### Step 1: 基本メトリクス取得
-            以下のメトリクスを取得してください：
+            ### Step 1: 環境確認
+            まず、Google Analytics MCP が正常に動作するか確認してください：
             
             ```javascript
-            // ページビュー分析
-            const pageViews = await getPageViews('yesterday', 'yesterday', ['pagePath', 'pageTitle']);
-            
-            // アクティブユーザー分析
-            const activeUsers = await getActiveUsers('yesterday', 'yesterday');
-            
-            // ユーザー行動分析
-            const userBehavior = await getUserBehavior('yesterday', 'yesterday');
-            
-            // イベント分析
-            const events = await getEvents('yesterday', 'yesterday');
+            // 基本的な接続テスト
+            console.log('GA4 MCP Server starting...');
+            console.log('Property ID:', process.env.GOOGLE_ANALYTICS_PROPERTY_ID);
             ```
             
-            ### Step 2: 詳細分析の実行
+            ### Step 2: 基本データ取得
+            以下の基本メトリクスを取得：
+            
+            ```javascript
+            // 昨日のデータを取得
+            const pageViews = await getPageViews('yesterday', 'yesterday');
+            const activeUsers = await getActiveUsers('yesterday', 'yesterday');
+            const userBehavior = await getUserBehavior('yesterday', 'yesterday');
+            ```
+            
+            ### Step 3: 詳細分析（可能な範囲で）
             ```javascript
             // デバイス別分析
-            const deviceAnalysis = await runReport({
-              dateRanges: [{ startDate: 'yesterday', endDate: 'yesterday' }],
-              dimensions: [{ name: 'deviceCategory' }],
-              metrics: [
-                { name: 'activeUsers' },
-                { name: 'sessions' },
-                { name: 'bounceRate' },
-                { name: 'averageSessionDuration' }
-              ]
-            });
+            const deviceAnalysis = await getDeviceAnalysis('yesterday', 'yesterday');
             
             // 流入経路分析
-            const trafficSources = await runReport({
-              dateRanges: [{ startDate: 'yesterday', endDate: 'yesterday' }],
-              dimensions: [{ name: 'sessionDefaultChannelGroup' }],
-              metrics: [
-                { name: 'sessions' },
-                { name: 'newUsers' },
-                { name: 'conversions' }
-              ]
-            });
-            
-            // 地域別分析
-            const geoAnalysis = await runReport({
-              dateRanges: [{ startDate: 'yesterday', endDate: 'yesterday' }],
-              dimensions: [{ name: 'country' }],
-              metrics: [{ name: 'activeUsers' }, { name: 'sessions' }],
-              orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
-              limit: 10
-            });
+            const trafficSources = await getTrafficSources('yesterday', 'yesterday');
             ```
             
-            ### Step 3: 前期比較分析
-            ```javascript
-            // 前日比較
-            const previousDay = await getPageViews('2daysAgo', '2daysAgo');
+            ## エラーハンドリング
             
-            // 前週比較  
-            const previousWeek = await getPageViews('8daysAgo', '8daysAgo');
+            MCPサーバーが利用できない場合は、以下の代替処理を実行：
             
-            // 前月比較
-            const previousMonth = await getPageViews('1monthAgo', '1monthAgo');
-            ```
+            1. **MCP接続エラーの場合**
+               - 基本的な分析レポートテンプレートを作成
+               - 設定の確認手順を提示
+               - 次回実行での改善を提案
             
-            ## 分析結果のIssue作成
+            2. **認証エラーの場合**  
+               - 認証設定の確認手順を提示
+               - 必要なSecrets設定を説明
+               - トラブルシューティングガイドを提供
             
-            上記の分析結果を基に、以下のフォーマットでGitHub Issueを作成してください：
+            ## Issue作成指示
             
-            **タイトル**: 📊 GA4分析レポート - ${{ github.run_started_at }}
+            分析が成功した場合、またはエラーが発生した場合、いずれも以下のフォーマットでIssueを作成：
+            
+            **タイトル**: 📊 GA4分析レポート (${{ github.run_started_at }})
             
             **内容**:
             ```markdown
-            # 📊 Google Analytics 4 分析レポート
+            # 📊 GA4分析レポート
             
-            > **分析期間**: ${{ github.event.inputs.date_range || 'yesterday' }}  
-            > **実行日時**: ${{ github.run_started_at }}  
-            > **分析タイプ**: ${{ github.event.inputs.analysis_type || 'daily' }}
+            ## 🔧 実行環境
+            - **Node.js**: 20.x
+            - **実行時刻**: ${{ github.run_started_at }}
+            - **トリガー**: ${{ github.event_name }}
             
-            ## 🎯 主要指標サマリー
+            ## 📈 分析結果
             
-            ### 📈 基本メトリクス
-            | 指標 | 値 | 前日比 | 前週比 |
-            |------|----|----|----| 
-            | ページビュー | [数値] | [±X%] | [±X%] |
-            | セッション数 | [数値] | [±X%] | [±X%] |
-            | アクティブユーザー | [数値] | [±X%] | [±X%] |
-            | 直帰率 | [X%] | [±X%] | [±X%] |
-            | 平均セッション時間 | [X分Y秒] | [±X%] | [±X%] |
+            ### ✅ 成功した処理
+            [実行できた分析項目]
             
-            ### 🔍 パフォーマンスハイライト
-            - **最高パフォーマンス**: [最も成果の良かった項目]
-            - **注意が必要**: [改善が必要な項目]
-            - **新しいトレンド**: [新たに発見された傾向]
+            ### ❌ 失敗した処理
+            [エラーが発生した項目とその理由]
             
-            ## 📱 デバイス別分析
+            ### 📊 取得データ（可能な範囲）
+            [取得できたデータの要約]
             
-            | デバイス | ユーザー数 | セッション数 | 直帰率 | 平均セッション時間 |
-            |---------|-----------|------------|--------|------------------|
-            | デスクトップ | [数値] | [数値] | [X%] | [X分Y秒] |
-            | モバイル | [数値] | [数値] | [X%] | [X分Y秒] |
-            | タブレット | [数値] | [数値] | [X%] | [X分Y秒] |
+            ## 🔧 改善事項
             
-            ### 📊 デバイス別インサイト
-            - [デバイス別の特徴的な傾向]
-            - [モバイル最適化の状況]
-            - [デバイス別の改善提案]
+            ### 今すぐ修正が必要
+            - [緊急修正項目]
             
-            ## 🌐 流入経路分析
+            ### 次回までに対応
+            - [継続的改善項目]
             
-            | チャネル | セッション数 | 新規ユーザー | コンバージョン |
-            |---------|------------|------------|--------------|
-            | オーガニック検索 | [数値] | [数値] | [数値] |
-            | ダイレクト | [数値] | [数値] | [数値] |
-            | ソーシャル | [数値] | [数値] | [数値] |
-            | リファラル | [数値] | [数値] | [数値] |
+            ## 📋 次のステップ
+            - [ ] [具体的なアクション1]
+            - [ ] [具体的なアクション2]
             
-            ### 🎯 流入経路インサイト
-            - [最も効果的なチャネル]
-            - [成長しているチャネル]
-            - [改善が必要なチャネル]
-            
-            ## 🗺️ 地域別分析（上位10位）
-            
-            | 国/地域 | ユーザー数 | セッション数 |
-            |---------|-----------|------------|
-            | [国名1] | [数値] | [数値] |
-            | [国名2] | [数値] | [数値] |
-            | ... | ... | ... |
-            
-            ## 📄 人気ページ分析
-            
-            | ページ | ページビュー | ユニークページビュー | 平均滞在時間 |
-            |--------|-------------|---------------------|--------------|
-            | [ページ1] | [数値] | [数値] | [X分Y秒] |
-            | [ページ2] | [数値] | [数値] | [X分Y秒] |
-            | ... | ... | ... | ... |
-            
-            ## 🎛️ イベント分析
-            
-            | イベント名 | 発生回数 | ユニークユーザー |
-            |-----------|---------|-----------------|
-            | [イベント1] | [数値] | [数値] |
-            | [イベント2] | [数値] | [数値] |
-            | ... | ... | ... |
-            
-            ## 🚨 アラート・注意事項
-            
-            ### 🔴 緊急対応が必要
-            - [緊急に対応すべき項目]
-            
-            ### 🟡 監視が必要
-            - [継続的に監視すべき項目]
-            
-            ### 🟢 好調な項目
-            - [良好な状態の項目]
-            
-            ## 💡 改善提案
-            
-            ### 🎯 短期改善（1週間以内）
-            1. **[改善項目1]**
-               - 現状: [現在の状況]
-               - 提案: [具体的な改善案]
-               - 期待効果: [予想される効果]
-               - 実装工数: [必要な工数]
-            
-            2. **[改善項目2]**
-               - 現状: [現在の状況]
-               - 提案: [具体的な改善案]
-               - 期待効果: [予想される効果]
-               - 実装工数: [必要な工数]
-            
-            ### 🚀 中長期改善（1ヶ月以内）
-            1. **[改善項目3]**
-               - 背景: [改善が必要な理由]
-               - 提案: [具体的な改善案]
-               - 期待効果: [予想される効果]
-               - 実装工数: [必要な工数]
-            
-            ## 📋 次回分析での確認事項
-            - [ ] [前回提案した改善の効果測定]
-            - [ ] [新しい指標の追加監視]
-            - [ ] [特定期間のトレンド確認]
-            
-            ## 🔗 詳細データ
-            [必要に応じて、より詳細なデータやグラフへのリンク]
-            
-            ---
-            
-            ### 🤖 自動分析について
-            この分析は Google Analytics MCP を使用して自動生成されました。
-            
-            **カスタム分析の依頼**:
-            - `@gemini analytics 詳細` - より詳しい分析
-            - `@gemini analytics compare [期間]` - 期間比較分析
-            - `@gemini analytics funnel` - コンバージョンファネル分析
-            - `@gemini analytics cohort` - コホート分析
+            ## 🤖 追加分析の依頼方法
+            - `@gemini analytics 詳細` - 詳細分析
+            - `@gemini analytics debug` - デバッグ実行
+            - `@gemini analytics setup` - 設定確認
             ```
             
-            ## 実行の注意事項
-            - Google Analytics MCP が正常に動作しない場合は、設定を確認してエラー報告
-            - データが取得できない場合は、代替案を提示
-            - 分析結果は統計的有意性を考慮して解釈
-            - 個人を特定できる情報は含めない
-            - すべての数値は実際のデータに基づいて記載
-            
-            今すぐこの分析を実行して、Issue を作成してください。
+            ## 実行開始
+            上記の手順に従って、GA4分析を実行してください。エラーが発生した場合も、適切なレポートを作成してください。
