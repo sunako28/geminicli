@@ -1,36 +1,20 @@
-# .github/workflows/ga4-web-analysis-fixed.yml
-name: GA4 Web Analysis (Fixed)
+\# .github/workflows/reliable-gemini-issue.yml
+name: Reliable Gemini Issue Creation
 
 on:
   workflow_dispatch:
-    inputs:
-      analysis_type:
-        description: '分析タイプ'
-        required: false
-        default: 'daily'
-        type: choice
-        options:
-        - 'daily'
-        - 'weekly'
-        - 'monthly'
-        - 'custom'
-  schedule:
-    # 毎日午前10時（JST）に実行
-    - cron: '0 1 * * *'
   issue_comment:
     types: [created]
 
 jobs:
-  ga4-analysis:
+  create-issue-reliably:
     if: |
       github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'schedule' ||
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@gemini analytics'))
+      (github.event_name == 'issue_comment' && startsWith(github.event.comment.body, '@gemini issue'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
       issues: write
-      pull-requests: write
     
     steps:
       - name: Checkout repository
@@ -39,136 +23,104 @@ jobs:
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: '20'  # ← Node.js 20に変更
+          node-version: '20'
           
-      - name: Verify Node.js Version
+      - name: Verify GitHub CLI
         run: |
-          echo "Node.js version: $(node --version)"
-          echo "npm version: $(npm --version)"
+          echo "=== GitHub CLI Verification ==="
+          gh auth status
+          gh repo view ${{ github.repository }}
+          echo "GitHub CLI is working correctly"
+        env:
+          GH_TOKEN: ${{ github.token }}
           
-      - name: Install Google Analytics Dependencies
-        run: |
-          npm install @google-analytics/data@^4.0.0
-          npm install googleapis@^128.0.0
-          
-      - name: GA4 MCP Web Analysis
+      - name: Gemini Issue Creation with Verification
         uses: google-gemini/gemini-cli-action@main
         env:
           GH_TOKEN: ${{ github.token }}
-          GOOGLE_ANALYTICS_PROPERTY_ID: ${{ secrets.GA_PROPERTY_ID }}
-          GOOGLE_ANALYTICS_CREDENTIALS: ${{ secrets.GA_CREDENTIALS }}
         with:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          settings_json: |
-            {
-              "mcps": [
-                {
-                  "name": "google-analytics",
-                  "command": "node",
-                  "args": ["mcp-analytics-server.js"],
-                  "env": {
-                    "GOOGLE_ANALYTICS_PROPERTY_ID": "${{ secrets.GA_PROPERTY_ID }}",
-                    "GOOGLE_ANALYTICS_CREDENTIALS": "${{ secrets.GA_CREDENTIALS }}"
-                  }
-                }
-              ]
-            }
           prompt: |
-            Google Analytics MCPを使用してWebサイトの分析を実行してください。
+            ## 📋 CRITICAL INSTRUCTION: Issue作成を確実に実行してください
             
-            ## 実行情報
-            - **Node.js バージョン**: 20
-            - **実行タイプ**: ${{ github.event_name }}
-            - **分析タイプ**: ${{ github.event.inputs.analysis_type || 'daily' }}
-            - **実行時刻**: ${{ github.run_started_at }}
+            以下の手順を**順番通りに必ず実行**してください：
             
-            ## 分析手順
-            
-            ### Step 1: 環境確認
-            まず、Google Analytics MCP が正常に動作するか確認してください：
-            
-            ```javascript
-            // 基本的な接続テスト
-            console.log('GA4 MCP Server starting...');
-            console.log('Property ID:', process.env.GOOGLE_ANALYTICS_PROPERTY_ID);
+            ### Step 1: GitHub CLI動作確認
+            まず、以下のコマンドでGitHub CLIが動作するか確認：
+            ```bash
+            gh auth status
             ```
             
-            ### Step 2: 基本データ取得
-            以下の基本メトリクスを取得：
+            ### Step 2: Issue作成の実行
+            以下のコマンドを**必ず実行**してください（コピー&ペーストして実行）：
             
-            ```javascript
-            // 昨日のデータを取得
-            const pageViews = await getPageViews('yesterday', 'yesterday');
-            const activeUsers = await getActiveUsers('yesterday', 'yesterday');
-            const userBehavior = await getUserBehavior('yesterday', 'yesterday');
-            ```
-            
-            ### Step 3: 詳細分析（可能な範囲で）
-            ```javascript
-            // デバイス別分析
-            const deviceAnalysis = await getDeviceAnalysis('yesterday', 'yesterday');
-            
-            // 流入経路分析
-            const trafficSources = await getTrafficSources('yesterday', 'yesterday');
-            ```
-            
-            ## エラーハンドリング
-            
-            MCPサーバーが利用できない場合は、以下の代替処理を実行：
-            
-            1. **MCP接続エラーの場合**
-               - 基本的な分析レポートテンプレートを作成
-               - 設定の確認手順を提示
-               - 次回実行での改善を提案
-            
-            2. **認証エラーの場合**  
-               - 認証設定の確認手順を提示
-               - 必要なSecrets設定を説明
-               - トラブルシューティングガイドを提供
-            
-            ## Issue作成指示
-            
-            分析が成功した場合、またはエラーが発生した場合、いずれも以下のフォーマットでIssueを作成：
-            
-            **タイトル**: 📊 GA4分析レポート (${{ github.run_started_at }})
-            
-            **内容**:
-            ```markdown
-            # 📊 GA4分析レポート
-            
-            ## 🔧 実行環境
-            - **Node.js**: 20.x
+            ```bash
+            gh issue create \
+              --title "📊 Gemini分析レポート - $(date '+%Y-%m-%d %H:%M')" \
+              --body "# 📊 自動分析レポート
+
+            ## 🤖 実行情報
             - **実行時刻**: ${{ github.run_started_at }}
             - **トリガー**: ${{ github.event_name }}
-            
-            ## 📈 分析結果
-            
-            ### ✅ 成功した処理
-            [実行できた分析項目]
-            
-            ### ❌ 失敗した処理
-            [エラーが発生した項目とその理由]
-            
-            ### 📊 取得データ（可能な範囲）
-            [取得できたデータの要約]
-            
-            ## 🔧 改善事項
-            
-            ### 今すぐ修正が必要
-            - [緊急修正項目]
-            
-            ### 次回までに対応
-            - [継続的改善項目]
-            
-            ## 📋 次のステップ
-            - [ ] [具体的なアクション1]
-            - [ ] [具体的なアクション2]
-            
-            ## 🤖 追加分析の依頼方法
-            - `@gemini analytics 詳細` - 詳細分析
-            - `@gemini analytics debug` - デバッグ実行
-            - `@gemini analytics setup` - 設定確認
+            - **ワークフロー**: Reliable Gemini Issue Creation
+            - **Node.js**: 20.x
+
+            ## ✅ 成功した処理
+            - GitHub Actions実行: 成功
+            - Gemini CLI起動: 成功
+            - GitHub CLI認証: 成功
+            - Issue作成: 成功
+
+            ## 📈 分析結果（サンプル）
+            | 指標 | 値 | ステータス |
+            |------|----|----|
+            | システム動作 | 正常 | ✅ |
+            | API接続 | 成功 | ✅ |
+            | データ取得 | 準備中 | 🔄 |
+
+            ## 💡 改善提案
+            1. **GA4連携の設定**
+               - Google Analytics MCPサーバーの設定
+               - 認証情報の確認
+               - テストデータの取得
+
+            2. **自動化の強化**
+               - 定期実行スケジュールの設定
+               - エラーハンドリングの改善
+               - 通知機能の追加
+
+            ## 🔄 次のステップ
+            - [ ] GA4 MCP設定の完了
+            - [ ] 実際のAnalyticsデータでのテスト
+            - [ ] 定期実行の有効化
+
+            ## 🤖 追加コマンド
+            - \`@gemini analytics\` - GA4分析実行
+            - \`@gemini issue 詳細分析\` - 詳細レポート作成
+            - \`@gemini setup\` - 設定確認
+
+            ---
+            *このレポートはGemini CLIによって自動生成されました*"
             ```
             
+            ### Step 3: 実行結果の確認
+            コマンド実行後、以下を確認：
+            ```bash
+            echo "Issue creation completed"
+            gh issue list --limit 1
+            ```
+            
+            ### Step 4: エラーハンドリング
+            もしStep 2でエラーが発生した場合、以下を実行：
+            ```bash
+            echo "Primary issue creation failed, trying alternative method"
+            gh issue create --title "🚨 Issue Creation Backup" --body "Backup issue creation method used"
+            ```
+            
+            ## 🚨 重要な注意
+            - 上記のコマンドは必ず実行してください
+            - コマンドの実行結果をログで確認してください
+            - エラーが発生した場合は、エラーメッセージを記録してください
+            
             ## 実行開始
-            上記の手順に従って、GA4分析を実行してください。エラーが発生した場合も、適切なレポートを作成してください。
+            今すぐStep 1から順番に実行してください。
