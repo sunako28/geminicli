@@ -1,4 +1,4 @@
-\# .github/workflows/reliable-gemini-issue.yml
+# .github/workflows/reliable-gemini-issue.yml
 name: Reliable Gemini Issue Creation
 
 on:
