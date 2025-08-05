@@ -1,18 +1,14 @@
-# .github/workflows/gemini-comment-handler.yml
-name: Gemini Comment Handler
+# .github/workflows/issue-auto-response.yml
+name: Issue Auto Response
 
 on:
-  workflow_dispatch:
+  issues:
+    types: [opened, reopened, edited]
   issue_comment:
-    types: [created]
-  pull_request_review_comment:
     types: [created]
 
 jobs:
-  handle-gemini-comment:
-    if: |
-      github.event_name == 'workflow_dispatch' || 
-      contains(github.event.comment.body, '@gemini')
+  auto-respond-to-issue:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -23,84 +19,162 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         
-      - name: Debug Information
-        run: |
-          echo "=== Event Information ==="
-          echo "Event name: ${{ github.event_name }}"
-          echo "Repository: ${{ github.repository }}"
-          if [ "${{ github.event_name }}" = "issue_comment" ]; then
-            echo "Issue number: ${{ github.event.issue.number }}"
-            echo "Comment body: ${{ github.event.comment.body }}"
-            echo "Comment user: ${{ github.event.comment.user.login }}"
-          fi
-          
-      - name: Setup GitHub CLI
-        run: |
-          echo "Testing GitHub CLI authentication..."
-          gh auth status
-          echo "Listing recent issues..."
-          gh issue list --limit 3
-        env:
-          GH_TOKEN: ${{ github.token }}
-          
-      - name: Direct Comment Test
-        if: github.event_name == 'issue_comment'
-        run: |
-          echo "Posting direct comment to issue #${{ github.event.issue.number }}"
-          gh issue comment ${{ github.event.issue.number }} --body "🤖 **直接投稿テスト**
-
-          Geminiのワークフローが実行されました！
-
-          **受信コメント:** ${{ github.event.comment.body }}
-          **投稿者:** @${{ github.event.comment.user.login }}
-          **実行時刻:** $(date)
-
-          この返信が表示されていれば、GitHub CLI経由のコメント投稿が正常に動作しています。
-
-          次はGemini経由のコメント投稿をテストします..."
-        env:
-          GH_TOKEN: ${{ github.token }}
-      
-      - name: Process with Gemini
+      - name: Analyze and Respond to Issue
         uses: google-gemini/gemini-cli-action@main
         env:
           GH_TOKEN: ${{ github.token }}
         with:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           prompt: |
-            ## Gemini経由コメント投稿テスト
+            GitHub Issueの内容を分析して、適切な対応を行ってください。
             
-            実行情報:
-            - イベント: ${{ github.event_name }}
-            - 実行時刻: ${{ github.run_started_at }}
-            - Issue番号: ${{ github.event.issue.number }}
+            ## Issue情報
+            - **Issue番号**: #${{ github.event.issue.number }}
+            - **タイトル**: "${{ github.event.issue.title }}"
+            - **作成者**: @${{ github.event.issue.user.login }}
+            - **作成日時**: ${{ github.event.issue.created_at }}
+            - **イベント**: ${{ github.event.action }}
             
-            ユーザーコメント: "${{ github.event.comment.body }}"
-            投稿者: ${{ github.event.comment.user.login }}
-            
-            ## 実行指示
-            以下のコマンドを実行して、Issue #${{ github.event.issue.number }} にコメントを投稿してください:
-            
-            ```bash
-            gh issue comment ${{ github.event.issue.number }} --body "🎉 **Gemini経由の返信成功！**
-            
-            コメント反応機能が正常に動作しています。
-            
-            **あなたのコメント:**
-            > ${{ github.event.comment.body }}
-            
-            **処理結果:**
-            - ✅ コメント検知: 成功
-            - ✅ ワークフロー実行: 成功
-            - ✅ Gemini処理: 成功
-            - ✅ 返信投稿: 成功
-            
-            **利用可能なコマンド:**
-            - \`@gemini このプロジェクトを分析して\`
-            - \`@gemini 改善提案をして\`
-            - \`@gemini 質問に答えて\`
-            
-            何でもお気軽にお声がけください！"
+            ## Issue内容
+            ```
+            ${{ github.event.issue.body }}
             ```
             
-            このコマンドを今すぐ実行してください。
+            ## 対応方針
+            以下の観点でIssueを分析し、適切な対応を実行してください：
+            
+            ### 1. Issue分類の判定
+            - **🐛 Bug Report**: バグ報告
+            - **✨ Feature Request**: 機能要望
+            - **❓ Question**: 質問・サポート
+            - **📚 Documentation**: ドキュメント関連
+            - **🔧 Task**: 作業・タスク
+            - **🚀 Enhancement**: 改善提案
+            
+            ### 2. 対応パターンの選択
+            
+            #### パターンA: バグ報告の場合
+            - 再現手順の確認
+            - 環境情報の収集
+            - 原因の分析
+            - 修正方法の提案
+            - 優先度の設定
+            
+            #### パターンB: 機能要望の場合
+            - 要望の詳細確認
+            - 実装可能性の評価
+            - 設計案の提案
+            - 必要なリソースの見積もり
+            - ロードマップへの位置づけ
+            
+            #### パターンC: 質問・サポートの場合
+            - 質問内容の理解
+            - 回答・解決策の提供
+            - 関連ドキュメントの案内
+            - 追加質問への対応準備
+            
+            #### パターンD: ドキュメント関連の場合
+            - 不足している情報の特定
+            - 改善案の提案
+            - 更新すべきファイルの特定
+            - 構造改善の提案
+            
+            #### パターンE: タスク・作業の場合
+            - 作業内容の詳細化
+            - 実装手順の提案
+            - 必要なスキル・リソースの特定
+            - チェックリストの作成
+            
+            ## 実行指示
+            
+            ### Step 1: ラベル付けの提案
+            Issue内容に基づいて適切なラベルを提案し、以下のコマンドでラベルを追加：
+            
+            ```bash
+            gh issue edit ${{ github.event.issue.number }} --add-label "[適切なラベル名]"
+            ```
+            
+            ### Step 2: 詳細な対応コメントの投稿
+            以下のフォーマットでコメントを投稿：
+            
+            ```bash
+            gh issue comment ${{ github.event.issue.number }} --body "🤖 **自動分析結果**
+            
+            @${{ github.event.issue.user.login }} さん、Issueを作成いただきありがとうございます！
+            
+            ## 📋 Issue分析
+            - **分類**: [判定した分類]
+            - **優先度**: [高/中/低]
+            - **複雑度**: [複雑/普通/単純]
+            - **推定工数**: [X時間/X日]
+            
+            ## 🔍 内容理解
+            [Issue内容の要約と理解した内容]
+            
+            ## 💡 対応方針・提案
+            [具体的な対応方針や解決策の提案]
+            
+            ### 📝 次のステップ
+            - [ ] [具体的なアクション1]
+            - [ ] [具体的なアクション2]
+            - [ ] [具体的なアクション3]
+            
+            ### 🔧 技術的詳細
+            [技術的な実装方法や調査が必要な場合]
+            
+            ### 📚 参考資料
+            [関連するドキュメントやリンク]
+            
+            ## ❓ 追加で必要な情報
+            [もし不足している情報があれば]
+            - [必要な情報1]
+            - [必要な情報2]
+            
+            ## 🚀 自動対応可能な作業
+            [Geminiが自動で実行できる作業があれば提案]
+            
+            ---
+            
+            ### 🤖 利用可能なコマンド
+            - \`@gemini このIssueを詳しく分析して\`
+            - \`@gemini 実装方法を提案して\`
+            - \`@gemini 類似のIssueを検索して\`
+            - \`@gemini テストケースを作成して\`
+            - \`@gemini ドキュメントを更新して\`
+            
+            何かご質問があれば、お気軽にコメントでお声がけください！"
+            ```
+            
+            ### Step 3: 自動対応可能な場合の追加アクション
+            
+            もしIssueの内容が以下に該当する場合、自動で対応を実行：
+            
+            #### 📚 ドキュメント要求の場合
+            - README更新の提案
+            - 新しいドキュメントファイルの作成
+            - API仕様書の生成
+            
+            #### 🧪 テスト関連の場合
+            - テストケースの提案
+            - テストファイルのテンプレート作成
+            
+            #### 🔧 設定・構成の場合
+            - 設定ファイルのテンプレート作成
+            - GitHub Actionsワークフローの提案
+            
+            ## 特別な対応ルール
+            
+            ### 緊急度の判定
+            以下のキーワードが含まれる場合は高優先度として扱う：
+            - "urgent", "critical", "broken", "not working"
+            - "production", "live", "customer", "security"
+            - "緊急", "重要", "至急", "本番", "障害"
+            
+            ### 自動クローズ条件
+            以下の場合は適切な説明とともに自動クローズを提案：
+            - 重複Issue
+            - 情報不足で対応不可能
+            - プロジェクト範囲外
+            
+            ## 実行開始
+            今すぐ上記の分析と対応を実行してください。GEMINI.mdの内容も参考にして、プロジェクトの方針に沿った対応を行ってください。
