@@ -2,7 +2,7 @@
 name: Gemini Comment Handler
 
 on:
-  workflow_dispatch:    # ←これが「Run workflow」ボタンを表示させる
+  workflow_dispatch:
   issue_comment:
     types: [created]
   pull_request_review_comment:
@@ -10,57 +10,99 @@ on:
 
 jobs:
   handle-gemini-comment:
-    # 手動実行時は常に実行、コメント時は@geminiで始まる場合のみ実行
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.comment.body, '@gemini')
+    if: |
+      github.event_name == 'workflow_dispatch' || 
+      contains(github.event.comment.body, '@gemini')
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
       issues: write
       pull-requests: write
+      metadata: read
     
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        
+      - name: Debug Information
+        run: |
+          echo "=== Event Information ==="
+          echo "Event name: ${{ github.event_name }}"
+          echo "Repository: ${{ github.repository }}"
+          if [ "${{ github.event_name }}" = "issue_comment" ]; then
+            echo "Issue number: ${{ github.event.issue.number }}"
+            echo "Comment body: ${{ github.event.comment.body }}"
+            echo "Comment user: ${{ github.event.comment.user.login }}"
+          fi
+          
+      - name: Setup GitHub CLI
+        run: |
+          echo "Testing GitHub CLI authentication..."
+          gh auth status
+          echo "Listing recent issues..."
+          gh issue list --limit 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+          
+      - name: Direct Comment Test
+        if: github.event_name == 'issue_comment'
+        run: |
+          echo "Posting direct comment to issue #${{ github.event.issue.number }}"
+          gh issue comment ${{ github.event.issue.number }} --body "🤖 **直接投稿テスト**
+
+          Geminiのワークフローが実行されました！
+
+          **受信コメント:** ${{ github.event.comment.body }}
+          **投稿者:** @${{ github.event.comment.user.login }}
+          **実行時刻:** $(date)
+
+          この返信が表示されていれば、GitHub CLI経由のコメント投稿が正常に動作しています。
+
+          次はGemini経由のコメント投稿をテストします..."
+        env:
+          GH_TOKEN: ${{ github.token }}
       
-      - name: Test Gemini Comment Handler
+      - name: Process with Gemini
         uses: google-gemini/gemini-cli-action@main
         env:
           GH_TOKEN: ${{ github.token }}
         with:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           prompt: |
-            ## Geminiコメント機能テスト
+            ## Gemini経由コメント投稿テスト
             
             実行情報:
-            - 実行方法: ${{ github.event_name }}
+            - イベント: ${{ github.event_name }}
             - 実行時刻: ${{ github.run_started_at }}
-            - リポジトリ: ${{ github.repository }}
+            - Issue番号: ${{ github.event.issue.number }}
             
-            以下の内容でテスト結果をGitHub Issueとして作成してください:
+            ユーザーコメント: "${{ github.event.comment.body }}"
+            投稿者: ${{ github.event.comment.user.login }}
             
-            **タイトル**: 🤖 Geminiコメント機能動作テスト結果
+            ## 実行指示
+            以下のコマンドを実行して、Issue #${{ github.event.issue.number }} にコメントを投稿してください:
             
-            **内容**:
-            ### ✅ 基本動作確認
-            - ワークフロー実行: 成功
-            - GitHub Actions連携: 正常
-            - Issue作成機能: 正常
+            ```bash
+            gh issue comment ${{ github.event.issue.number }} --body "🎉 **Gemini経由の返信成功！**
             
-            ### 📝 次のテスト手順
-            1. このIssueに以下のコメントを投稿:
-               ```
-               @gemini こんにちは！コメント反応テストです。
-               ```
-            2. 数分待って、Geminiからの返信コメントを確認
-            3. 返信があれば、コメント反応機能が正常動作
+            コメント反応機能が正常に動作しています。
             
-            ### 🔧 テスト用コメント例
-            - `@gemini このプロジェクトの概要を教えて`
-            - `@gemini コード改善提案をして`
-            - `@gemini GEMINI.mdの内容を要約して`
+            **あなたのコメント:**
+            > ${{ github.event.comment.body }}
             
-            ### 📊 実行詳細
-            - 実行ID: ${{ github.run_id }}
-            - 実行番号: ${{ github.run_number }}
+            **処理結果:**
+            - ✅ コメント検知: 成功
+            - ✅ ワークフロー実行: 成功
+            - ✅ Gemini処理: 成功
+            - ✅ 返信投稿: 成功
             
-            このIssueを今すぐ作成してください。
+            **利用可能なコマンド:**
+            - \`@gemini このプロジェクトを分析して\`
+            - \`@gemini 改善提案をして\`
+            - \`@gemini 質問に答えて\`
+            
+            何でもお気軽にお声がけください！"
+            ```
+            
+            このコマンドを今すぐ実行してください。
