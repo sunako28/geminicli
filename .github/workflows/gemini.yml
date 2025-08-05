@@ -1,10 +1,10 @@
-# .github/workflows/ga4-analytics-production.yml
-name: GA4 Analytics Production
+# .github/workflows/ga4-events-numbers.yml
+name: GA4 Events Numbers Only
 
 on:
   workflow_dispatch:
     inputs:
-      analysis_period:
+      date_range:
         description: '分析期間'
         required: false
         default: 'yesterday'
@@ -13,16 +13,6 @@ on:
         - 'yesterday'
         - '7daysAgo'
         - '30daysAgo'
-      analysis_type:
-        description: '分析タイプ'
-        required: false
-        default: 'comprehensive'
-        type: choice
-        options:
-        - 'basic'
-        - 'comprehensive'
-        - 'performance'
-        - 'traffic'
   schedule:
     # 毎日午前10時（JST）に実行
     - cron: '0 1 * * *'
@@ -30,11 +20,11 @@ on:
     types: [created]
 
 jobs:
-  ga4-web-analysis:
+  ga4-events-numbers:
     if: |
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'schedule' ||
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@gemini analytics'))
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@gemini numbers'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -52,218 +42,252 @@ jobs:
       - name: Install GA4 Dependencies
         run: |
           npm install @google-analytics/data@^4.0.0
-          npm install googleapis@^128.0.0
-          echo "GA4 dependencies installed successfully"
           
-      - name: Verify GA4 Setup
+      - name: Extract GA4 Numbers
         run: |
-          echo "=== GA4 Setup Verification ==="
-          echo "Property ID exists: ${{ secrets.GA_PROPERTY_ID != '' }}"
-          echo "Credentials exist: ${{ secrets.GA_CREDENTIALS != '' }}"
+          echo "=== GA4 数値データ取得 ==="
           
-          # 基本的な接続テスト
-          cat > test-ga4-connection.js << 'EOF'
+          cat > extract-ga4-numbers.js << 'EOF'
           const { BetaAnalyticsDataClient } = require('@google-analytics/data');
           
-          async function testConnection() {
+          async function extractNumbers() {
             try {
               const credentials = JSON.parse(process.env.GOOGLE_ANALYTICS_CREDENTIALS);
               const client = new BetaAnalyticsDataClient({ credentials });
+              const propertyId = process.env.GOOGLE_ANALYTICS_PROPERTY_ID;
+              const dateRange = process.env.DATE_RANGE || 'yesterday';
               
-              console.log('✅ GA4 Client created successfully');
-              console.log('📊 Property ID:', process.env.GOOGLE_ANALYTICS_PROPERTY_ID);
-              console.log('🔑 Project ID:', credentials.project_id);
+              console.log('📊 GA4 Data Extraction Started');
+              console.log('📅 Date Range:', dateRange);
               
-              // Simple test query
-              const [response] = await client.runReport({
-                property: `properties/${process.env.GOOGLE_ANALYTICS_PROPERTY_ID}`,
-                dateRanges: [{ startDate: 'yesterday', endDate: 'yesterday' }],
-                metrics: [{ name: 'activeUsers' }]
+              // 基本メトリクス
+              const [basicMetrics] = await client.runReport({
+                property: `properties/${propertyId}`,
+                dateRanges: [{ startDate: dateRange, endDate: dateRange }],
+                metrics: [
+                  { name: 'activeUsers' },
+                  { name: 'newUsers' },
+                  { name: 'sessions' },
+                  { name: 'screenPageViews' },
+                  { name: 'bounceRate' },
+                  { name: 'averageSessionDuration' }
+                ]
               });
               
-              console.log('✅ Test query successful');
-              console.log('📈 Data rows returned:', response.rowCount || 0);
+              // イベント別データ
+              const [eventData] = await client.runReport({
+                property: `properties/${propertyId}`,
+                dateRanges: [{ startDate: dateRange, endDate: dateRange }],
+                dimensions: [{ name: 'eventName' }],
+                metrics: [{ name: 'eventCount' }],
+                orderBys: [{ metric: { metricName: 'eventCount' }, desc: true }],
+                limit: 20
+              });
+              
+              // ページ別データ
+              const [pageData] = await client.runReport({
+                property: `properties/${propertyId}`,
+                dateRanges: [{ startDate: dateRange, endDate: dateRange }],
+                dimensions: [{ name: 'pagePath' }],
+                metrics: [{ name: 'screenPageViews' }],
+                orderBys: [{ metric: { metricName: 'screenPageViews' }, desc: true }],
+                limit: 10
+              });
+              
+              // デバイス別データ
+              const [deviceData] = await client.runReport({
+                property: `properties/${propertyId}`,
+                dateRanges: [{ startDate: dateRange, endDate: dateRange }],
+                dimensions: [{ name: 'deviceCategory' }],
+                metrics: [
+                  { name: 'activeUsers' },
+                  { name: 'sessions' }
+                ]
+              });
+              
+              // 結果を JSON 形式で出力
+              const results = {
+                date: dateRange,
+                timestamp: new Date().toISOString(),
+                basic_metrics: {},
+                events: {},
+                pages: {},
+                devices: {}
+              };
+              
+              // 基本メトリクス
+              if (basicMetrics.rows && basicMetrics.rows[0]) {
+                const row = basicMetrics.rows[0];
+                results.basic_metrics = {
+                  active_users: parseInt(row.metricValues[0].value),
+                  new_users: parseInt(row.metricValues[1].value),
+                  sessions: parseInt(row.metricValues[2].value),
+                  page_views: parseInt(row.metricValues[3].value),
+                  bounce_rate: Math.round(parseFloat(row.metricValues[4].value) * 100) / 100,
+                  avg_session_duration: Math.round(parseFloat(row.metricValues[5].value))
+                };
+              }
+              
+              // イベント別
+              if (eventData.rows) {
+                eventData.rows.forEach(row => {
+                  const eventName = row.dimensionValues[0].value;
+                  const eventCount = parseInt(row.metricValues[0].value);
+                  results.events[eventName] = eventCount;
+                });
+              }
+              
+              // ページ別
+              if (pageData.rows) {
+                pageData.rows.forEach(row => {
+                  const pagePath = row.dimensionValues[0].value;
+                  const pageViews = parseInt(row.metricValues[0].value);
+                  results.pages[pagePath] = pageViews;
+                });
+              }
+              
+              // デバイス別
+              if (deviceData.rows) {
+                deviceData.rows.forEach(row => {
+                  const device = row.dimensionValues[0].value;
+                  const users = parseInt(row.metricValues[0].value);
+                  const sessions = parseInt(row.metricValues[1].value);
+                  results.devices[device] = { users, sessions };
+                });
+              }
+              
+              // 結果を環境変数として出力（GitHub Actionsで使用）
+              console.log('=== RESULTS START ===');
+              console.log(JSON.stringify(results, null, 2));
+              console.log('=== RESULTS END ===');
+              
+              // シンプルな数値のみ出力
+              console.log('=== SIMPLE NUMBERS ===');
+              console.log('アクティブユーザー:', results.basic_metrics.active_users);
+              console.log('新規ユーザー:', results.basic_metrics.new_users);
+              console.log('セッション数:', results.basic_metrics.sessions);
+              console.log('ページビュー:', results.basic_metrics.page_views);
+              console.log('直帰率:', results.basic_metrics.bounce_rate + '%');
+              console.log('平均セッション時間:', results.basic_metrics.avg_session_duration + '秒');
+              
+              console.log('\n=== TOP EVENTS ===');
+              Object.entries(results.events).slice(0, 5).forEach(([event, count]) => {
+                console.log(`${event}: ${count}`);
+              });
+              
+              // ファイルに保存
+              require('fs').writeFileSync('ga4-numbers.json', JSON.stringify(results, null, 2));
+              console.log('✅ Data saved to ga4-numbers.json');
               
             } catch (error) {
-              console.error('❌ GA4 connection failed:', error.message);
+              console.error('❌ Error:', error.message);
               process.exit(1);
             }
           }
           
-          testConnection();
+          extractNumbers();
           EOF
           
-          node test-ga4-connection.js
+          node extract-ga4-numbers.js
         env:
           GOOGLE_ANALYTICS_PROPERTY_ID: ${{ secrets.GA_PROPERTY_ID }}
           GOOGLE_ANALYTICS_CREDENTIALS: ${{ secrets.GA_CREDENTIALS }}
+          DATE_RANGE: ${{ github.event.inputs.date_range || 'yesterday' }}
           
-      - name: Generate GA4 Analysis Report
+      - name: Upload Numbers Data
+        uses: actions/upload-artifact@v4
+        with:
+          name: ga4-numbers-data
+          path: ga4-numbers.json
+          
+      - name: Create Numbers Report
         uses: google-gemini/gemini-cli-action@main
         env:
           GH_TOKEN: ${{ github.token }}
         with:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           prompt: |
-            ## GA4 Web分析レポート生成
+            ## GA4数値レポート作成
             
-            Google Analytics 4のデータを使用して、包括的なWeb分析レポートを作成してください。
+            GA4から取得した数値データを基に、シンプルな数値レポートを作成してください。
             
-            ### 📊 分析パラメータ
-            - **分析期間**: ${{ github.event.inputs.analysis_period || 'yesterday' }}
-            - **分析タイプ**: ${{ github.event.inputs.analysis_type || 'comprehensive' }}
+            ### データ取得情報
+            - **日付**: ${{ github.event.inputs.date_range || 'yesterday' }}
             - **実行時刻**: ${{ github.run_started_at }}
-            - **トリガー**: ${{ github.event_name }}
             
-            ### 🔧 利用可能なGA4データ
-            GA4接続テストが成功したので、以下のデータが取得可能です：
-            - ページビュー数
-            - アクティブユーザー数
-            - セッション情報
-            - デバイス別データ
-            - 流入経路データ
-            - 地域別データ
+            ### レポート作成指示
             
-            ### 📋 レポート作成指示
-            
-            以下のコマンドでIssueを作成してください：
+            以下のコマンドで数値のみのシンプルなIssueを作成：
             
             ```bash
             gh issue create \
-              --title "📊 GA4分析レポート - $(date '+%Y-%m-%d %H:%M')" \
-              --body "# 📊 Google Analytics 4 Web分析レポート
+              --title "📊 GA4数値データ - $(date '+%Y-%m-%d')" \
+              --body "# 📊 GA4数値データ
             
-            ## 🎯 分析概要
-            - **分析期間**: ${{ github.event.inputs.analysis_period || 'yesterday' }}
-            - **分析タイプ**: ${{ github.event.inputs.analysis_type || 'comprehensive' }}
-            - **実行時刻**: ${{ github.run_started_at }}
+            ## 📅 データ概要
+            - **対象日**: ${{ github.event.inputs.date_range || 'yesterday' }}
+            - **取得時刻**: ${{ github.run_started_at }}
             - **データソース**: Google Analytics 4
             
-            ## 📈 主要指標
+            ## 📈 基本指標（数値のみ）
             
-            ### 基本メトリクス
-            | 指標 | 値 | 前日比 | ステータス |
-            |------|----|----|--------|
-            | ページビュー | [取得データ] | [変化率] | [評価] |
-            | アクティブユーザー | [取得データ] | [変化率] | [評価] |
-            | セッション数 | [取得データ] | [変化率] | [評価] |
-            | 直帰率 | [取得データ] | [変化率] | [評価] |
-            | 平均セッション時間 | [取得データ] | [変化率] | [評価] |
+            \`\`\`
+            アクティブユーザー: [実際の数値]
+            新規ユーザー: [実際の数値]  
+            セッション数: [実際の数値]
+            ページビュー: [実際の数値]
+            直帰率: [実際の数値]%
+            平均セッション時間: [実際の数値]秒
+            \`\`\`
             
-            ## 📱 デバイス別分析
+            ## 🎯 主要イベント（TOP5）
             
-            | デバイス | ユーザー数 | セッション数 | 直帰率 |
-            |---------|-----------|------------|--------|
-            | デスクトップ | [データ] | [データ] | [データ] |
-            | モバイル | [データ] | [データ] | [データ] |
-            | タブレット | [データ] | [データ] | [データ] |
+            \`\`\`
+            [イベント名1]: [数値]
+            [イベント名2]: [数値]
+            [イベント名3]: [数値]
+            [イベント名4]: [数値]
+            [イベント名5]: [数値]
+            \`\`\`
             
-            ### 📊 デバイス別インサイト
-            - **モバイル最適化**: [評価と提案]
-            - **デスクトップ体験**: [評価と提案]
-            - **レスポンシブ対応**: [評価と提案]
+            ## 📱 デバイス別ユーザー
             
-            ## 🌐 流入経路分析
+            \`\`\`
+            デスクトップ: [ユーザー数] ([セッション数])
+            モバイル: [ユーザー数] ([セッション数])
+            タブレット: [ユーザー数] ([セッション数])
+            \`\`\`
             
-            | チャネル | セッション数 | 新規ユーザー | コンバージョン |
-            |---------|------------|------------|--------------|
-            | オーガニック検索 | [データ] | [データ] | [データ] |
-            | ダイレクト | [データ] | [データ] | [データ] |
-            | ソーシャル | [データ] | [データ] | [データ] |
-            | リファラル | [データ] | [データ] | [データ] |
-            | 有料検索 | [データ] | [データ] | [データ] |
+            ## 📄 人気ページ（TOP5）
             
-            ### 🎯 流入経路インサイト
-            - **最も効果的なチャネル**: [分析結果]
-            - **成長機会**: [具体的な提案]
-            - **改善が必要な領域**: [問題点と解決策]
+            \`\`\`
+            [ページ1]: [PV数]
+            [ページ2]: [PV数]
+            [ページ3]: [PV数]
+            [ページ4]: [PV数]
+            [ページ5]: [PV数]
+            \`\`\`
             
-            ## 📄 人気ページ分析
+            ## 📊 JSON データ
             
-            | ページ | ページビュー | 滞在時間 | 直帰率 |
-            |--------|-------------|---------|--------|
-            | [ページ1] | [データ] | [データ] | [データ] |
-            | [ページ2] | [データ] | [データ] | [データ] |
-            | [ページ3] | [データ] | [データ] | [データ] |
+            完全なデータが必要な場合は、以下のArtifactsからダウンロードできます：
+            - Workflow Run: ${{ github.run_id }}
+            - Artifact: ga4-numbers-data
             
-            ## 🗺️ 地域別分析
-            
-            | 国/地域 | ユーザー数 | セッション数 | 平均セッション時間 |
-            |---------|-----------|------------|------------------|
-            | [地域1] | [データ] | [データ] | [データ] |
-            | [地域2] | [データ] | [データ] | [データ] |
-            | [地域3] | [データ] | [データ] | [データ] |
-            
-            ## 🚨 要注意事項
-            
-            ### 🔴 緊急対応が必要
-            - [緊急性の高い問題]
-            
-            ### 🟡 改善推奨
-            - [中期的な改善項目]
-            
-            ### 🟢 好調な項目
-            - [継続すべき良い傾向]
-            
-            ## 💡 具体的改善提案
-            
-            ### 短期改善（1週間以内）
-            1. **[改善項目1]**
-               - 現状: [問題の詳細]
-               - 提案: [具体的な解決策]
-               - 期待効果: [定量的な効果予測]
-               - 実装工数: [必要時間の見積]
-            
-            2. **[改善項目2]**
-               - 現状: [問題の詳細]
-               - 提案: [具体的な解決策]
-               - 期待効果: [定量的な効果予測]
-               - 実装工数: [必要時間の見積]
-            
-            ### 中長期改善（1ヶ月以内）
-            1. **[戦略的改善項目]**
-               - 背景: [改善の必要性]
-               - 提案: [包括的なソリューション]
-               - 期待効果: [ビジネスインパクト]
-               - 実装計画: [段階的な実装ステップ]
-            
-            ## 📋 アクションプラン
-            
-            ### 今週の優先事項
-            - [ ] [具体的なタスク1]
-            - [ ] [具体的なタスク2]
-            - [ ] [具体的なタスク3]
-            
-            ### 来月までの目標
-            - [ ] [中期目標1]
-            - [ ] [中期目標2]
-            
-            ## 📞 次回分析での確認事項
-            - 今回の改善提案の効果測定
-            - 新しいトレンドの確認
-            - 競合他社との比較分析
-            
-            ## 🤖 追加分析の依頼
-            より詳細な分析が必要な場合：
-            - \`@gemini analytics detailed\` - 詳細分析
-            - \`@gemini analytics funnel\` - コンバージョンファネル分析
-            - \`@gemini analytics compare [期間]\` - 期間比較
-            - \`@gemini analytics mobile\` - モバイル特化分析
+            ## 🤖 コマンド
+            - \`@gemini numbers\` - 数値データ再取得
+            - \`@gemini numbers 7days\` - 7日間のデータ
+            - \`@gemini numbers 30days\` - 30日間のデータ
             
             ---
             
-            **📊 データ取得状況**: ✅ GA4接続成功  
-            **🤖 生成システム**: Gemini CLI + GA4 MCP  
-            **📅 次回自動実行**: 明日 10:00 AM (JST)  
-            
-            *このレポートは実際のGA4データに基づいて生成されています*"
+            *データ取得: ${{ github.run_started_at }}*"
             ```
             
-            ### 🚨 重要な指示
-            1. 上記のコマンドを必ず実行してください
-            2. [取得データ] の部分は実際のGA4データで置き換えてください
-            3. 分析結果は具体的で実装可能な内容にしてください
-            4. エラーが発生した場合も、その旨をレポートに含めてください
+            ### 重要な指示
+            1. 上記の [実際の数値] の部分は、実際にGA4から取得したデータで置き換えてください
+            2. 数値のみをクリアに表示してください
+            3. 余計な説明や解釈は不要です
+            4. エラーが発生した場合も、その旨を数値と共に報告してください
             
-            ### 🔄 実行開始
-            今すぐGA4データを取得して、上記のIssueを作成してください。
+            今すぐ実行してください。
