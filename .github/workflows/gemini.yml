@@ -1,33 +1,3 @@
-- name: Create Issue from GA4 Data
-        if: always()
-        run: |
-          gh issue create \
-            --title "📊 GA4ページビュー数 - $(date '+%Y-%m-%d')" \
-            --body "# 📊 GA4ページビュー数
-
-          ## 📅 基本情報
-          - **対象日**: ${{ github.event.inputs.date_range || 'yesterday' }}
-          - **取得時刻**: $(date '+%Y-%m-%d %H:%M JST')
-          - **プロパティID**: ${{ secrets.GA_PROPERTY_ID }}
-
-          ## 📊 分析結果
-
-          **詳細はワークフロー実行ログを確認してください:**
-          - [ワークフロー実行結果](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
-
-          ## 💡 MCPサーバーテスト
-
-          このワークフローではGA4公式MCPサーバーとの接続をテストしています。
-
-          ## 🤖 次回取得
-          - \`@gemini pv\` - ページビュー数再取得
-          - 明日10時に自動実行
-
-          ---
-          **📊 データソース**: GA4公式MCP  
-          **🕐 実行時刻**: $(date '+%Y-%m-%d %H:%M JST')"
-        env:
-          GH_TOKEN: ${{ github.token }}name: GA4 Simple PageViews
 on:
   workflow_dispatch:
     inputs:
