@@ -15,33 +15,28 @@ jobs:
     steps:
       - name: Run Gemini GA4 Summary
         uses: google-gemini/gemini-cli-action@main
-        env:
-          GOOGLE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL }}
-          GA_PROPERTY_ID: ${{ secrets.GA_PROPERTY_ID }}
-          # サービスアカウントキーのJSONをGitHub Secretsに保存し、ファイルに書き出す
-          GA_CREDENTIALS: ${{ secrets.GA_CREDENTIALS }}
         with:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           settings_json: |
             {
               "mcpServers": {
                 "ga4": {
-                  "command": "node",
+                  "command": "npx",
                   "args": ["-y", "@modelcontextprotocol/server-ga4"],
                   "env": {
-                    "GOOGLE_CLIENT_EMAIL": "$GOOGLE_SERVICE_ACCOUNT_EMAIL",
-                    "GA_PROPERTY_ID": "$GA_PROPERTY_ID",
-                    "GOOGLE_APPLICATION_CREDENTIALS": "/path/to/your/credentials.json"
+                    "GOOGLE_CLIENT_EMAIL": "${{ secrets.GOOGLE_CLIENT_EMAIL }}",
+                    "GOOGLE_PRIVATE_KEY": "${{ secrets.GOOGLE_PRIVATE_KEY }}",
+                    "GA_PROPERTY_ID": "${{ secrets.GA_PROPERTY_ID }}"
                   }
                 }
               },
               "coreTools": [
-                "mcp__ga4__get_page_views"
+                "mcp__ga4__get_report"
               ]
             }
           prompt: |
             あなたはGA4の要約アシスタントです。
-            1. GA4のプロパティID ${{ env.GA_PROPERTY_ID }} から日本時間で昨日分のデータを取得してください。
+            1. GA4のプロパティID ${{ secrets.GA_PROPERTY_ID }} から日本時間で昨日分のデータを取得してください。
             2. 主なトラフィックソース、人気のあるページ、コンバージョンイベントなどを特定してください。
-            3. 見つかった内容を短い段落と人気記事の箇条書きでまとめてください。
-            4. まとめをGitHub issueに投稿します。
+            3. 見つかった内容を短い段落と箇条書きでまとめてください。
+            4. 要約をGitHub issueに投稿してください。
