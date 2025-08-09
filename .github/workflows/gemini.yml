@@ -8,18 +8,24 @@ on:
 jobs:
   summarize-ga4:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      id-token: write
-
     steps:
+      # 1) 改行復元して GITHUB_ENV に入れる
+      - name: Prepare GOOGLE_PRIVATE_KEY with real newlines
+        run: |
+          printf '%b' "${{ secrets.GOOGLE_PRIVATE_KEY }}" > private_key.pem
+          {
+            echo "GOOGLE_PRIVATE_KEY<<'EOF'"
+            cat private_key.pem
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+
+      # 2) gemini CLI 実行（npx サーバ利用）
       - name: Run Gemini GA4 Summary
         uses: google-gemini/gemini-cli-action@main
         env:
           GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
-          # ↓ 改行入りの秘密鍵は \n を実改行に戻してから渡す（後述の代替案もOK）
-          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
+          # ← 復元済みの鍵を参照
+          GOOGLE_PRIVATE_KEY: ${{ env.GOOGLE_PRIVATE_KEY }}
           GA_PROPERTY_ID: ${{ secrets.GA_PROPERTY_ID }}
         with:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -36,9 +42,7 @@ jobs:
                   }
                 }
               },
-              "coreTools": [
-                "mcp__google-analytics__run_report"
-              ]
+              "coreTools": ["mcp__google-analytics__run_report"]
             }
           prompt: |
             あなたはGA4の要約アシスタントです。
