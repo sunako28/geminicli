@@ -49,20 +49,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         with:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          settings_json: |
-            {
-              "mcps": [
-                {
-                  "name": "google-analytics",
-                  "command": "npx",
-                  "args": ["@google-analytics/mcp-server"],
-                  "env": {
-                    "GOOGLE_ANALYTICS_PROPERTY_ID": "${{ secrets.GA_PROPERTY_ID }}",
-                    "GOOGLE_ANALYTICS_CREDENTIALS": "${{ secrets.GA_CREDENTIALS }}"
-                  }
-                }
-              ]
-            }
+          settings_json: '{"mcps":[{"name":"google-analytics","command":"npx","args":["@google-analytics/mcp-server"],"env":{"GOOGLE_ANALYTICS_PROPERTY_ID":"${{ secrets.GA_PROPERTY_ID }}","GOOGLE_ANALYTICS_CREDENTIALS":"${{ secrets.GA_CREDENTIALS }}"}}]}'
           prompt: |
             ## 📊 GA4シンプル分析 & 改善提案
             
