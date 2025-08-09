@@ -1,65 +1,49 @@
-name: Gemini GA4 Summary
+name: Gemini GA4 Summary (npx server)
 
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: '0 23 * * *'  # 毎日 08:00 JST（UTC 23:00）
+    - cron: '0 23 * * *'  # 毎日 08:00 JST
 
 jobs:
   summarize-ga4:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
-      issues: write
       id-token: write
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Write ADC file
-        run: |
-          echo '${{ secrets.GA_ADC_JSON }}' > $HOME/ga-adc.json
-
       - name: Run Gemini GA4 Summary
-        id: gemini
-        uses: google-github-actions/run-gemini-cli@v0
+        uses: google-gemini/gemini-cli-action@main
+        env:
+          GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
+          # ↓ 改行入りの秘密鍵は \n を実改行に戻してから渡す（後述の代替案もOK）
+          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
+          GA_PROPERTY_ID: ${{ secrets.GA_PROPERTY_ID }}
         with:
-          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
-          # .gemini/settings.jsonとして書き込まれる
-          settings: |
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          settings_json: |
             {
               "mcpServers": {
-                "analytics-mcp": {
-                  "command": "pipx",
-                  "args": ["run", "--spec", "git+https://github.com/googleanalytics/google-analytics-mcp.git", "google-analytics-mcp"],
+                "google-analytics": {
+                  "command": "npx",
+                  "args": ["-y", "mcp-server-google-analytics"],
                   "env": {
-                    "GOOGLE_APPLICATION_CREDENTIALS": "${HOME}/ga-adc.json"
+                    "GOOGLE_CLIENT_EMAIL": "$GOOGLE_CLIENT_EMAIL",
+                    "GOOGLE_PRIVATE_KEY": "$GOOGLE_PRIVATE_KEY",
+                    "GA_PROPERTY_ID": "$GA_PROPERTY_ID"
                   }
                 }
-              }
+              },
+              "coreTools": [
+                "mcp__google-analytics__run_report"
+              ]
             }
           prompt: |
             あなたはGA4の要約アシスタントです。
-            前提：
-            - 対象プロパティは ${{ secrets.GA_PROPERTY_ID }}（GA4のProperty ID）。
-            - プロパティのタイムゾーンで「昨日」を抽出（JSTに設定されている想定）。
-            タスク：
-            1) 主なトラフィックソース（source/medium別）、人気ページ（pagePath/Screen class等）、主なコンバージョンイベントを昨日分で取得し、上位を簡潔に要約。
-            2) 先週同曜日比/前日比の簡易差分がわかる場合は一言で補足。
-            3) 箇条書き＋短い段落でまとめ、最後に次のアクション案を3つ出す。
-            注意：
-            - analytics-mcpのツール（run_report / run_realtime_report等）を適切に呼び出すこと。
-            - GA4のディメンション/指標はData APIに準拠すること。
-
-      - name: Create GitHub issue with summary
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const title = `GA4 日次要約 (${new Date().toISOString().slice(0,10)})`;
-            const body = `${{ steps.gemini.outputs.summary }}`;
-            await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title,
-              body
-            });
+            環境変数 GA_PROPERTY_ID で指定されたプロパティについて、プロパティのタイムゾーン（JST想定）で「昨日」のデータを取得し要約してください。
+            - 主なトラフィックソース（source/medium）
+            - 人気ページ（pagePath等）
+            - 主なコンバージョンイベント
+            必要に応じて mcp__google-analytics__run_report を複数回呼び、短い段落＋箇条書きでまとめてください。
