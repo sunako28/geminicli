@@ -8,23 +8,20 @@ on:
 jobs:
   summarize-ga4:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      id-token: write
-
     steps:
-      - name: Write ADC JSON to file
+      # 秘密鍵（\n入り1行）→ 実改行へ復元し、環境変数に安全格納
+      - name: Prepare GOOGLE_PRIVATE_KEY (multiline)
         run: |
-          # Secretsに保存されたGA_ADC_JSONをそのままファイルに書き出す
-          echo '${{ secrets.GA_ADC_JSON }}' > "$HOME/ga-adc.json"
-          chmod 600 "$HOME/ga-adc.json"
+          printf '%b' "${{ secrets.GOOGLE_PRIVATE_KEY }}" > private_key.pem
+          echo "GOOGLE_PRIVATE_KEY<<EOF" >> $GITHUB_ENV
+          cat private_key.pem >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
 
-      - name: Run Gemini GA4 Summary via MCP
-        id: ga4
+      - name: Run Gemini GA4 Summary via MCP (JS server)
         uses: google-gemini/gemini-cli-action@main
         env:
-          GOOGLE_APPLICATION_CREDENTIALS: $HOME/ga-adc.json
+          GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
+          GOOGLE_PRIVATE_KEY: ${{ env.GOOGLE_PRIVATE_KEY }}
           GA_PROPERTY_ID: ${{ secrets.GA_PROPERTY_ID }}
         with:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -35,7 +32,8 @@ jobs:
                   "command": "npx",
                   "args": ["-y", "mcp-server-google-analytics"],
                   "env": {
-                    "GOOGLE_APPLICATION_CREDENTIALS": "$GOOGLE_APPLICATION_CREDENTIALS",
+                    "GOOGLE_CLIENT_EMAIL": "$GOOGLE_CLIENT_EMAIL",
+                    "GOOGLE_PRIVATE_KEY": "$GOOGLE_PRIVATE_KEY",
                     "GA_PROPERTY_ID": "$GA_PROPERTY_ID"
                   }
                 }
