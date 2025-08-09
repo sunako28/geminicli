@@ -1,4 +1,4 @@
-name: GA4 Hybrid Analysis (MCP + Direct API)
+name: GA4 Simple PageViews
 on:
   workflow_dispatch:
     inputs:
@@ -17,152 +17,19 @@ on:
     types: [created]
 
 jobs:
-  ga4-hybrid-analysis:
+  ga4-simple-pageviews:
     if: |
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'schedule' ||
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@gemini analyze'))
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@gemini pv'))
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     permissions:
       contents: read
       issues: write
+      id-token: write
     
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          
-      - name: Get GA4 Data (Fallback Method)
-        id: get-ga4-data
-        run: |
-          npm install @google-analytics/data
-          
-          cat > get-ga4-data.js << 'EOF'
-          const { BetaAnalyticsDataClient } = require('@google-analytics/data');
-          
-          async function getGA4Data() {
-            try {
-              const credentials = JSON.parse(process.env.GOOGLE_ANALYTICS_CREDENTIALS);
-              const client = new BetaAnalyticsDataClient({ credentials });
-              const propertyId = process.env.GA_PROPERTY_ID;
-              const dateRange = process.env.DATE_RANGE || 'yesterday';
-              
-              console.log('📊 GA4データ取得開始...');
-              console.log(`🎯 プロパティID: ${propertyId}`);
-              console.log(`📅 対象期間: ${dateRange}`);
-              
-              // 基本指標取得
-              const [basicReport] = await client.runReport({
-                property: `properties/${propertyId}`,
-                dateRanges: [{ startDate: dateRange, endDate: dateRange }],
-                metrics: [
-                  { name: 'activeUsers' },
-                  { name: 'sessions' },
-                  { name: 'screenPageViews' },
-                  { name: 'averageSessionDuration' }
-                ]
-              });
-              
-              // ページビュー取得
-              const [pageReport] = await client.runReport({
-                property: `properties/${propertyId}`,
-                dateRanges: [{ startDate: dateRange, endDate: dateRange }],
-                dimensions: [{ name: 'pagePath' }],
-                metrics: [{ name: 'screenPageViews' }],
-                orderBys: [{ metric: { metricName: 'screenPageViews' }, desc: true }],
-                limit: 10
-              });
-              
-              // イベント取得
-              const [eventReport] = await client.runReport({
-                property: `properties/${propertyId}`,
-                dateRanges: [{ startDate: dateRange, endDate: dateRange }],
-                dimensions: [{ name: 'eventName' }],
-                metrics: [{ name: 'eventCount' }],
-                orderBys: [{ metric: { metricName: 'eventCount' }, desc: true }],
-                limit: 10
-              });
-              
-              // データ整理
-              const data = {
-                date: dateRange,
-                timestamp: new Date().toISOString(),
-                propertyId: propertyId,
-                metrics: {},
-                pages: [],
-                events: []
-              };
-              
-              // 基本指標
-              if (basicReport.rows && basicReport.rows[0]) {
-                const row = basicReport.rows[0];
-                data.metrics = {
-                  activeUsers: parseInt(row.metricValues[0].value) || 0,
-                  sessions: parseInt(row.metricValues[1].value) || 0,
-                  pageViews: parseInt(row.metricValues[2].value) || 0,
-                  avgSessionDuration: Math.round(parseFloat(row.metricValues[3].value)) || 0
-                };
-              }
-              
-              // ページデータ
-              if (pageReport.rows) {
-                data.pages = pageReport.rows.slice(0, 10).map(row => ({
-                  path: row.dimensionValues[0].value,
-                  views: parseInt(row.metricValues[0].value)
-                }));
-              }
-              
-              // イベントデータ
-              if (eventReport.rows) {
-                data.events = eventReport.rows.slice(0, 10).map(row => ({
-                  name: row.dimensionValues[0].value,
-                  count: parseInt(row.metricValues[0].value)
-                }));
-              }
-              
-              // GitHub Output形式で出力
-              const output = `GA4_DATA<<EOF\n${JSON.stringify(data, null, 2)}\nEOF`;
-              require('fs').appendFileSync(process.env.GITHUB_OUTPUT, output);
-              
-              console.log('✅ GA4データ取得完了');
-              console.log(`📈 アクティブユーザー: ${data.metrics.activeUsers}`);
-              console.log(`📄 ページビュー: ${data.metrics.pageViews}`);
-              console.log(`🎯 イベント種類: ${data.events.length}`);
-              console.log(`📊 人気ページ: ${data.pages.length}`);
-              
-            } catch (error) {
-              console.error('❌ GA4データ取得エラー:', error.message);
-              
-              // エラー時も基本情報で継続
-              const errorData = {
-                date: process.env.DATE_RANGE || 'yesterday',
-                timestamp: new Date().toISOString(),
-                propertyId: process.env.GA_PROPERTY_ID,
-                error: error.message,
-                metrics: { activeUsers: 0, sessions: 0, pageViews: 0, avgSessionDuration: 0 },
-                pages: [],
-                events: []
-              };
-              
-              const output = `GA4_DATA<<EOF\n${JSON.stringify(errorData, null, 2)}\nEOF`;
-              require('fs').appendFileSync(process.env.GITHUB_OUTPUT, output);
-            }
-          }
-          
-          getGA4Data();
-          EOF
-          
-          node get-ga4-data.js
-        env:
-          GA_PROPERTY_ID: ${{ secrets.GA_PROPERTY_ID }}
-          GOOGLE_ANALYTICS_CREDENTIALS: ${{ secrets.GA_CREDENTIALS }}
-          DATE_RANGE: ${{ github.event.inputs.date_range || 'yesterday' }}
-          
       - name: Setup Python for MCP
         uses: actions/setup-python@v4
         with:
@@ -173,7 +40,7 @@ jobs:
           python -m pip install --user pipx
           python -m pipx ensurepath
           
-      - name: Generate Analysis with MCP Assistance
+      - name: GA4 Simple PageViews Analysis
         uses: google-gemini/gemini-cli-action@main
         env:
           GH_TOKEN: ${{ github.token }}
@@ -192,115 +59,69 @@ jobs:
                     "google-analytics-mcp"
                   ],
                   "env": {
-                    "GOOGLE_APPLICATION_CREDENTIALS_JSON": "$GOOGLE_APPLICATION_CREDENTIALS_JSON"
+                    "GOOGLE_APPLICATION_CREDENTIALS_JSON": "$GOOGLE_APPLICATION_CREDENTIALS_JSON",
+                    "GA_PROPERTY_ID": "${{ secrets.GA_PROPERTY_ID }}"
                   }
                 }
-              }
+              },
+              "coreTools": [
+                "mcp__analytics-mcp__run_report",
+                "mcp__analytics-mcp__get_property_details",
+                "mcp__analytics-mcp__get_account_summaries"
+              ]
             }
           prompt: |
-            あなたはGA4データ分析の専門家です。以下の取得済みデータを分析してGitHub Issueを作成してください。
+            GA4からページビュー数のみ取得して簡単なレポートを作成してください。
 
-            ## 📊 取得済みGA4データ
+            ## 🎯 シンプルな任務
 
-            ```json
-            ${{ steps.get-ga4-data.outputs.GA4_DATA }}
-            ```
+            **ページビュー数の取得のみ** 行ってください：
 
-            ## 🎯 あなたの任務
+            1. **まず利用可能なツールを確認:**
+               ```
+               what MCP tools are available from analytics-mcp server?
+               ```
 
-            上記のGA4データを分析し、**必ず以下のコマンドを実行**してGitHub Issueを作成してください：
+            2. **基本のページビュー数を取得:**
+               ```
+               use mcp__analytics-mcp__run_report to get total page views for property ${{ secrets.GA_PROPERTY_ID }} for date range ${{ github.event.inputs.date_range || 'yesterday' }}
+               ```
 
-            ```
-            gh issue create --title "📊 GA4ハイブリッド分析レポート - $(date '+%Y-%m-%d')" --body "# 📊 GA4分析レポート（ハイブリッド版）
+            2. **Issue作成:**
+               
+               データ取得後、以下のコマンドを**必ず実行**してください：
 
-            ## 📅 分析概要
-            - **対象期間**: ${{ github.event.inputs.date_range || 'yesterday' }}
-            - **分析時刻**: $(date '+%Y-%m-%d %H:%M JST')
-            - **プロパティID**: [JSONから抽出]
-            - **データソース**: GA4 API + MCP補助
-            - **取得方法**: Direct API (MCP補助あり)
+               ```
+               gh issue create --title "📊 GA4ページビュー数 - $(date '+%Y-%m-%d')" --body "# 📊 GA4ページビュー数
 
-            ## 📈 基本指標
+            ## 📅 基本情報
+            - **対象日**: ${{ github.event.inputs.date_range || 'yesterday' }}
+            - **取得時刻**: $(date '+%Y-%m-%d %H:%M JST')
+            - **プロパティID**: ${{ secrets.GA_PROPERTY_ID }}
 
-            ### 📊 主要数値
-            [JSONデータから実際の数値を抽出して表示]
-            - **アクティブユーザー**: [activeUsers] 人
-            - **セッション数**: [sessions] セッション
-            - **ページビュー**: [pageViews] PV
-            - **平均セッション時間**: [avgSessionDuration] 秒
+            ## 📈 ページビュー数
 
-            ## 🏆 TOP10データ
+            **総ページビュー**: [実際の数値] PV
 
-            ### 📄 人気ページ
-            [JSONのpagesデータから作成]
-            1. [path] - [views] views
-            2. [path] - [views] views
-            (実際のデータで10位まで表示)
+            ## 💡 ひとこと分析
 
-            ### 🎯 主要イベント
-            [JSONのeventsデータから作成]
-            1. [name] - [count] 回
-            2. [name] - [count] 回
-            (実際のデータで10位まで表示)
+            [数値に基づいた簡単なコメント]
 
-            ## 💡 データドリブン改善提案
-
-            ### 🚀 即効性のある改善（今日中）
-            [実際のデータ分析に基づいて]
-            - [ ] 最人気ページ「[1位のページ]」の成功要因を他ページに適用
-            - [ ] 低PVページの導線改善
-            - [ ] 主要イベント「[1位のイベント]」の発生率向上施策
-
-            ### 📈 中期改善（今週中）
-            [実際のデータ分析に基づいて]
-            - [ ] SEO対策による自然流入増加
-            - [ ] ユーザビリティ改善によるセッション時間延長
-            - [ ] コンバージョン率向上施策
-
-            ## 📊 パフォーマンス評価
-
-            ### 総合評価
-            [実際の数値に基づいて評価]
-            - **データ品質**: [良好/要改善]
-            - **トラフィック**: [多い/平均的/少ない]
-            - **エンゲージメント**: [高い/普通/低い]
-
-            ### 成功指標
-            - **PV目標**: 前回比 +10%
-            - **セッション時間目標**: +15秒
-            - **イベント発生目標**: +20%
-
-            ## 🔧 技術詳細
-
-            ### データ取得方法
-            - **方法**: GA4 Data API (Direct)
-            - **MCP補助**: analytics-mcp (プロパティ確認用)
-            - **認証**: Service Account
-            - **期間**: ${{ github.event.inputs.date_range || 'yesterday' }}
-
-            ### 取得データ詳細
-            [エラーがあった場合はその詳細も記載]
-
-            ## 🤖 次回分析コマンド
-            - \`@gemini analyze\` - 今日の分析
-            - \`@gemini analyze 7days\` - 週間分析  
-            - \`@gemini analyze 30days\` - 月間分析
+            ## 🤖 次回取得
+            - \`@gemini pv\` - ページビュー数再取得
+            - 明日10時に自動実行
 
             ---
-            **📊 データ取得**: $(date '+%Y-%m-%d %H:%M JST')  
-            **🔄 次回自動実行**: 明日 10:00 JST  
-            **📈 改善目標**: 継続的成長"
-            ```
+            **📊 データ**: GA4公式MCP  
+            **🕐 更新**: $(date '+%H:%M JST')"
+               ```
 
-            ## ⚡ 重要な実行指示
+            ## ⚡ 重要な指示
 
-            1. **JSONデータから実際の数値を抽出して表示してください**
-            2. **[activeUsers] [sessions] などを実際の数値で置換してください**
-            3. **pages配列とevents配列からTOP10リストを作成してください**
-            4. **エラーがあった場合はその詳細も記載してください**
-            5. **必ず gh issue create コマンドを実行してください**
-            6. **実行完了後「Issue #XX を作成しました」と報告してください**
+            1. **ページビュー数のみ取得** - 他の複雑なデータは不要
+            2. **[実際の数値]を実際のページビュー数で置換**
+            3. **エラーが出たら「データ取得できませんでした」と記載**
+            4. **必ず gh issue create コマンドを実行**
+            5. **シンプルで短いレポートにする**
 
-            **MCPサーバーが利用可能であれば、追加の洞察やGA4の設定情報も取得してください。**
-
-            今すぐ実行してください！
+            今すぐページビュー数を取得してIssueを作成してください！
