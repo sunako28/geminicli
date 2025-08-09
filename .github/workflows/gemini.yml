@@ -3,13 +3,16 @@ name: Gemini GA4 Summary
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: '0 23 * * *' # 毎日 日本時間08:00（UTC 23:00）
+    - cron: '0 23 * * *' # 毎日 日本時間08:00
+
+permissions:         # ← 追加（全体でも job でもOK）
+  contents: read
+  issues: write
 
 jobs:
   summarize-ga4:
     runs-on: ubuntu-latest
     steps:
-      # GA4の集計実行
       - name: Run Gemini GA4 Summary via MCP (JS server)
         id: ga4
         uses: google-gemini/gemini-cli-action@main
@@ -43,24 +46,19 @@ jobs:
             を mcp__google-analytics__run_report で取得・要約してください。
             可能なら前日比/先週同曜日比も一言で補足してください。
 
-      # 実行結果をGitHub Issueに書き込み
       - name: Create GitHub Issue with Summary
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ github.token }}   # ← ここを修正
           script: |
             const today = new Date().toISOString().split('T')[0];
-            const summary = process.env.GEMINI_RESULT || core.getInput('gemini_result') || '';
-            const issueTitle = `GA4サマリー (${today})`;
-            const body = summary || 'GA4集計結果が取得できませんでした。';
+            const title = `GA4サマリー (${today})`;
+            const body  = ${{ toJSON(steps.ga4.outputs.gemini_result) }} || 'GA4集計結果が取得できませんでした。';
 
             const { data: issue } = await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: issueTitle,
-              body: body
+              title,
+              body
             });
-
             core.info(`✅ Issue #${issue.number} を作成しました`);
-        env:
-          GEMINI_RESULT: ${{ steps.ga4.outputs.gemini_result }}
