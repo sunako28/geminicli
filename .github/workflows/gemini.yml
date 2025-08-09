@@ -1,111 +1,105 @@
-name: GA4 MCP Connection Test
+name: GA4 Analytics Summary
 on:
   workflow_dispatch: {}
-
+  schedule:
+    - cron: '0 1 * * *'  # 毎日日本時間10時（UTC 1時）
+  issue_comment:
+    types: [created]
 jobs:
-  ga4-mcp-test:
+  analyze-ga4:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@gemini ga4'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
-    
+      issues: write
+      id-token: write
     steps:
-      - name: Setup Python for MCP
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-          
-      - name: Install pipx
-        run: |
-          python -m pip install --user pipx
-          python -m pipx ensurepath
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-          
-      - name: Test GA4 MCP Connection
+      - name: Run GA4 Analytics Summary
         uses: google-gemini/gemini-cli-action@main
         env:
-          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GA_CREDENTIALS }}
+          GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
+          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}
+          GA_PROPERTY_ID: ${{ secrets.GA_PROPERTY_ID }}
+          GH_TOKEN: ${{ github.token }}
         with:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           settings_json: |
             {
               "mcpServers": {
-                "analytics-mcp": {
-                  "command": "pipx",
-                  "args": [
-                    "run",
-                    "--spec",
-                    "git+https://github.com/googleanalytics/google-analytics-mcp.git",
-                    "google-analytics-mcp"
-                  ],
+                "google-analytics": {
+                  "command": "npx",
+                  "args": ["-y", "mcp-server-google-analytics"],
                   "env": {
-                    "GOOGLE_APPLICATION_CREDENTIALS_JSON": "$GOOGLE_APPLICATION_CREDENTIALS_JSON"
+                    "GOOGLE_CLIENT_EMAIL": "$GOOGLE_CLIENT_EMAIL",
+                    "GOOGLE_PRIVATE_KEY": "$GOOGLE_PRIVATE_KEY",
+                    "GA_PROPERTY_ID": "$GA_PROPERTY_ID"
                   }
                 }
-              }
+              },
+              "coreTools": [
+                "mcp__google-analytics__getPageViews",
+                "mcp__google-analytics__getEvents"
+              ]
             }
           prompt: |
-            ## 🔧 GA4 MCP接続テスト（修正版）
+            あなたは GA4 データ分析アシスタントです。
+            1. プロパティ ${{ secrets.GA_PROPERTY_ID }} から昨日分のページビューとイベントデータを取得してください。
+            2. 最も人気のページとイベントを特定してください。
+            3. 見つかった内容を短い段落と人気ページ・イベントの箇条書きでまとめてください。
+            4. 改善提案も含めてください。
+            5. 要約を GitHub Issue として投稿してください。
 
-            以下の順序でGA4 MCPサーバーを慎重にテストしてください：
+            以下の形式でGitHub Issueを作成してください：
 
-            ### 1. MCPサーバー基本確認
+            タイトル: "📊 GA4日次レポート - $(date '+%Y-%m-%d')"
+
+            内容:
             ```
-            まず、analytics-mcp サーバーが応答するかどうか確認してください
-            ```
+            # 📊 GA4日次分析レポート
 
-            ### 2. アカウント概要の取得
-            ```
-            利用可能なGoogle Analyticsアカウントをリストアップしてください
-            ```
+            ## 📅 概要
+            - **分析日**: 昨日
+            - **プロパティ**: ${{ secrets.GA_PROPERTY_ID }}
+            - **分析時刻**: $(date '+%Y-%m-%d %H:%M JST')
 
-            ### 3. プロパティ詳細の取得
-            ```
-            アカウント内で利用可能なGA4プロパティの一覧を取得してください
-            ```
+            ## 📈 主要データ
 
-            ### 4. 基本レポートの実行
-            ```
-            最初に見つかったGA4プロパティで、昨日の基本的なデータを取得してください
-            ```
+            ### 人気ページ TOP3
+            [実際のデータで置換]
+            1. ページA - XXX PV
+            2. ページB - XXX PV  
+            3. ページC - XXX PV
 
-            ## 📊 結果レポート
+            ### 主要イベント TOP3
+            [実際のデータで置換]
+            1. イベントA - XXX 回
+            2. イベントB - XXX 回
+            3. イベントC - XXX 回
 
-            テスト結果を以下の形式で報告してください：
+            ## 💡 今日の改善提案
 
-            ```
-            # 🔧 GA4 MCP接続テスト結果（修正版）
+            **人気ページの活用:**
+            - [具体的な提案]
 
-            ## ✅ テスト実行状況
+            **イベント最適化:**
+            - [具体的な提案]
 
-            ### 1. MCPサーバー基本確認
-            状況: [成功/失敗]
-            応答: [サーバーからの応答内容]
+            ## 🎯 明日への注目ポイント
+            - [注目すべきKPI]
+            - [改善施策の効果測定]
 
-            ### 2. アカウント概要取得
-            状況: [成功/失敗]
-            結果: [取得できたアカウント情報]
+            ## 🤖 次回分析
+            `@gemini ga4` でコメントすると即座に再分析
 
-            ### 3. プロパティ一覧取得
-            状況: [成功/失敗] 
-            結果: [取得できたプロパティ情報]
-
-            ### 4. 基本レポート実行
-            状況: [成功/失敗]
-            結果: [取得できたデータ]
-
-            ## 🎯 総合判定
-            [テスト結果の総合評価]
-
-            ## 🔧 推奨される次のステップ
-            [成功した場合と失敗した場合の対応策]
+            ---
+            📊 データソース: GA4 MCP | 🕒 更新: 毎日10時
             ```
 
-            ## ⚡ 重要な指示
-
-            1. **各ステップで詳細なエラー情報を記録してください**
-            2. **レスポンス解析エラーが出た場合は、その詳細を報告してください**
-            3. **プロパティIDを事前指定せずに、動的に発見してください**
-            4. **失敗した場合も次のステップに進んでください**
-
-            慎重にテストを開始してください！
+            重要：
+            - 必ず実際のGA4データを取得してプレースホルダーを置換してください
+            - データ取得できない場合はその旨を明記してください
+            - GitHub Issueの作成も必ず実行してください
