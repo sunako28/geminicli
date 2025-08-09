@@ -1,6 +1,4 @@
-# .github/workflows/ga4-simple-analysis.yml
-name: GA4 Simple Analysis
-
+name: GA4 MCP Analysis
 on:
   workflow_dispatch:
     inputs:
@@ -14,210 +12,163 @@ on:
         - '7daysAgo'
         - '30daysAgo'
   schedule:
-    # 毎日午前10時（JST）に実行
-    - cron: '0 1 * * *'
+    - cron: '0 1 * * *'  # 毎日日本時間10時（UTC 1時）
   issue_comment:
     types: [created]
 
 jobs:
-  ga4-simple-analysis:
+  ga4-analysis:
     if: |
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'schedule' ||
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@gemini analyze'))
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       issues: write
+      id-token: write
     
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          
-      - name: Install MCP Dependencies
-        run: |
-          npm install @modelcontextprotocol/sdk
-          
-      - name: Gemini CLI Simple GA4 Analysis
+      - name: Run GA4 MCP Analysis
         uses: google-gemini/gemini-cli-action@main
         env:
           GH_TOKEN: ${{ github.token }}
+          GOOGLE_ANALYTICS_PROPERTY_ID: ${{ secrets.GA_PROPERTY_ID }}
+          GOOGLE_ANALYTICS_CREDENTIALS: ${{ secrets.GA_CREDENTIALS }}
         with:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          settings_json: '{"mcps":[{"name":"google-analytics","command":"npx","args":["@google-analytics/mcp-server"],"env":{"GOOGLE_ANALYTICS_PROPERTY_ID":"${{ secrets.GA_PROPERTY_ID }}","GOOGLE_ANALYTICS_CREDENTIALS":"${{ secrets.GA_CREDENTIALS }}"}}]}'
+          settings_json: |
+            {
+              "mcpServers": {
+                "google-analytics": {
+                  "command": "npx",
+                  "args": ["-y", "@modelcontextprotocol/server-google-analytics"],
+                  "env": {
+                    "GOOGLE_ANALYTICS_PROPERTY_ID": "$GOOGLE_ANALYTICS_PROPERTY_ID",
+                    "GOOGLE_ANALYTICS_CREDENTIALS": "$GOOGLE_ANALYTICS_CREDENTIALS"
+                  }
+                }
+              },
+              "coreTools": [
+                "mcp__google-analytics__getPageViews",
+                "mcp__google-analytics__getActiveUsers",
+                "mcp__google-analytics__getEvents",
+                "mcp__google-analytics__getUserBehavior",
+                "mcp__google-analytics__runReport"
+              ]
+            }
           prompt: |
-            ## 📊 GA4シンプル分析 & 改善提案
-            
-            GA4から基本的なデータを取得し、実用的な改善提案を作成してください。
-            
-            ### 📅 分析設定
+            あなたは GA4 データ分析アシスタントです。
+
+            ## 📊 実行手順
+
+            1. **GA4データを取得してください:**
+               - 対象期間: ${{ github.event.inputs.date_range || 'yesterday' }}
+               - ページビューデータ（上位10ページ）
+               - イベントデータ（上位10イベント）
+               - 基本的なユーザー指標
+
+            2. **データを分析して以下を特定してください:**
+               - 最も人気のページとPV数
+               - 最も発生したイベントと回数
+               - 改善が必要な低パフォーマンスエリア
+               - 成功している高パフォーマンスエリア
+
+            3. **分析結果をGitHub Issueに投稿してください:**
+
+            ```bash
+            gh issue create \
+              --title "📊 GA4日次分析レポート - $(date '+%Y-%m-%d')" \
+              --body "# 📊 GA4分析レポート
+
+            ## 📅 分析概要
             - **対象期間**: ${{ github.event.inputs.date_range || 'yesterday' }}
-            - **実行時刻**: ${{ github.run_started_at }}
-            
-            ### 🔍 実行手順
-            
-            1. **基本データ取得**
-               
-               以下の2つの基本データのみ取得：
-               
-               ```
-               # ページビューデータ
-               google-analytics:getPageViews({ 
-                 startDate: "${{ github.event.inputs.date_range || 'yesterday' }}", 
-                 endDate: "${{ github.event.inputs.date_range || 'yesterday' }}",
-                 dimensions: ["page"]
-               })
-               
-               # イベントデータ
-               google-analytics:getEvents({ 
-                 startDate: "${{ github.event.inputs.date_range || 'yesterday' }}", 
-                 endDate: "${{ github.event.inputs.date_range || 'yesterday' }}" 
-               })
-               ```
-            
-            2. **データ分析 & Issue作成**
-               
-               取得したデータを分析し、以下の形式でIssueを作成：
-               
-               ```bash
-               gh issue create \
-                 --title "📊 GA4分析 & 改善提案 - $(date '+%Y-%m-%d')" \
-                 --body "# 📊 GA4分析 & 改善提案
-               
-               ## 📅 分析概要
-               - **対象日**: ${{ github.event.inputs.date_range || 'yesterday' }}
-               - **分析時刻**: ${{ github.run_started_at }}
-               
-               ## 📈 基本データ
-               
-               ### ページビュー分析
-               \`\`\`
-               総ページビュー: [合計数]
-               
-               人気ページ TOP3:
-               1. [ページ名] - [PV数]
-               2. [ページ名] - [PV数] 
-               3. [ページ名] - [PV数]
-               \`\`\`
-               
-               ### イベント分析
-               \`\`\`
-               総イベント数: [合計数]
-               
-               主要イベント TOP3:
-               1. [イベント名] - [回数]
-               2. [イベント名] - [回数]
-               3. [イベント名] - [回数]
-               \`\`\`
-               
-               ## 💡 改善提案
-               
-               ### 🎯 ページビュー改善
-               
-               **📊 現状分析:**
-               - 最も人気: [1位のページ] ([PV数])
-               - 改善対象: [下位のページ] ([PV数])
-               
-               **🔧 具体的改善案:**
-               1. **低PVページの改善**
-                  - タイトルの見直し（SEO対策）
-                  - 内部リンクの追加
-                  - ソーシャル共有の促進
-               
-               2. **人気ページの活用**
-                  - 関連ページへの導線強化
-                  - CTA（行動喚起）の最適化
-                  - コンテンツの拡充
-               
-               ### 🎪 イベント改善
-               
-               **📊 現状分析:**
-               - 最多イベント: [1位のイベント] ([回数])
-               - 改善対象: [少ないイベント] ([回数])
-               
-               **🔧 具体的改善案:**
-               1. **エンゲージメント向上**
-                  - ボタンクリック率の改善
-                  - スクロール深度の向上
-                  - 滞在時間の延長
-               
-               2. **コンバージョン最適化**
-                  - 重要イベントの導線改善
-                  - ユーザビリティの向上
-                  - A/Bテストの実施
-               
-               ## 📋 今週のアクションプラン
-               
-               ### 🚀 すぐできる改善（1-3日）
-               - [ ] 低PVページのタイトル見直し
-               - [ ] 人気ページに関連リンク追加
-               - [ ] 重要ボタンの配置確認
-               
-               ### 📈 中期改善（1-2週間）
-               - [ ] SEO対策の実施
-               - [ ] コンテンツの追加・更新
-               - [ ] ユーザビリティテスト
-               
-               ### 🎯 効果測定（継続）
-               - [ ] 改善後のPV変化を監視
-               - [ ] イベント発生率の追跡
-               - [ ] 週次での改善効果確認
-               
-               ## 🤖 次回分析コマンド
-               - \`@gemini analyze\` - 今日の分析
-               - \`@gemini analyze 7days\` - 週次分析
-               - \`@gemini analyze 30days\` - 月次分析
-               
-               ## 📊 データの見方
-               
-               ### PV数の目安
-               - 😊 50+ : 人気ページ
-               - 🙂 10-50 : 平均的
-               - 😐 1-10 : 改善要
-               - 😔 0 : 要対策
-               
-               ### イベント数の目安  
-               - 🎉 100+ : 高エンゲージメント
-               - 👍 20-100 : 良好
-               - 🤔 5-20 : 改善余地あり
-               - 😟 0-5 : 要改善
-               
-               ---
-               
-               **🔄 次回改善チェック**: [1週間後の日付]  
-               **📈 改善目標**: PV +20%, イベント +15%"
-               ```
-            
-            ### ⚡ 重要な実行指示
-            
-            1. **シンプルさ重視**
-               - ページビューとイベント数のみに集中
-               - 複雑な分析は避ける
-               - 数値は分かりやすく表示
-            
-            2. **実用的な改善提案**
-               - 具体的なアクション項目を提示
-               - 優先度を明確にする
-               - 実施可能な範囲で提案
-            
-            3. **データの解釈**
-               - 数値だけでなく、その意味を説明
-               - 業界平均との比較（可能であれば）
-               - 改善の方向性を示す
-            
-            4. **継続性の担保**
-               - 次回チェック日を設定
-               - 改善目標の数値化
-               - 進捗追跡の仕組み
-            
-            5. **エラー時の対応**
-               - データ取得できない場合は代替案提示
-               - 部分的なデータでも分析実行
-               - 改善できない理由も説明
-            
-            今すぐGA4 MCPサーバーからデータを取得し、実用的な改善提案を含むIssueを作成してください！
+            - **分析実行時刻**: $(date '+%Y-%m-%d %H:%M:%S JST')
+            - **データソース**: Google Analytics 4 (MCP)
+
+            ## 📈 基本指標
+
+            ### 📊 主要数値
+            - **アクティブユーザー**: [実際の数値]
+            - **ページビュー**: [実際の数値]
+            - **セッション数**: [実際の数値]
+            - **平均セッション時間**: [実際の数値]秒
+
+            ## 🏆 人気コンテンツ TOP5
+
+            ### 📄 人気ページ
+            1. **[ページ名]** - [PV数] views
+            2. **[ページ名]** - [PV数] views
+            3. **[ページ名]** - [PV数] views
+            4. **[ページ名]** - [PV数] views
+            5. **[ページ名]** - [PV数] views
+
+            ### 🎯 主要イベント
+            1. **[イベント名]** - [回数] 回
+            2. **[イベント名]** - [回数] 回
+            3. **[イベント名]** - [回数] 回
+            4. **[イベント名]** - [回数] 回
+            5. **[イベント名]** - [回数] 回
+
+            ## 💡 改善提案
+
+            ### 🚀 高パフォーマンス（活用推奨）
+            - **成功ページ**: [1位のページ名]
+              - 💡 **活用案**: 関連コンテンツの作成、内部リンク強化
+            - **人気イベント**: [1位のイベント名]
+              - 💡 **活用案**: 同様の機能を他ページにも展開
+
+            ### ⚠️ 改善要注意（対策推奨）
+            - **低PVページ**: [最下位のページ名]
+              - 🔧 **改善案**: タイトル見直し、SEO対策、導線改善
+            - **少ないイベント**: [最少のイベント名]
+              - 🔧 **改善案**: UI改善、配置変更、ユーザビリティ向上
+
+            ## 📋 今日のアクションプラン
+
+            ### ✅ すぐできる改善（今日中）
+            - [ ] 人気ページの関連記事リンク追加
+            - [ ] 低PVページのタイトル確認
+            - [ ] 重要ボタンの配置確認
+
+            ### 📈 今週の改善項目
+            - [ ] SEO対策の実施
+            - [ ] ユーザビリティテスト
+            - [ ] コンテンツ更新計画
+
+            ## 📊 パフォーマンス評価
+
+            ### PV評価基準
+            - 🥇 100+ : 優秀
+            - 🥈 50-99 : 良好  
+            - 🥉 10-49 : 平均
+            - 😐 1-9 : 要改善
+            - 😟 0 : 緊急対策
+
+            ### イベント評価基準
+            - 🎉 50+ : 高エンゲージメント
+            - 👍 20-49 : 良好
+            - 🤔 5-19 : 改善余地
+            - 😟 0-4 : 要対策
+
+            ## 🤖 次回分析コマンド
+            - \`@gemini analyze\` - 今日の分析
+            - \`@gemini analyze 7days\` - 週間分析  
+            - \`@gemini analyze 30days\` - 月間分析
+
+            ---
+            **📊 データ取得**: MCP経由 GA4 API  
+            **🔄 次回自動実行**: 明日 10:00 JST  
+            **📈 改善目標**: 週次でPV +10%, イベント +15%"
+            ```
+
+            ## ⚡ 重要な実行指示
+
+            1. **必ずGA4 MCPサーバーを使用してリアルデータを取得**
+            2. **[実際の数値]や[ページ名]は必ず実データで置換**
+            3. **データが取得できない場合は、その旨を明記**
+            4. **改善提案は具体的で実行可能なものに**
+            5. **パフォーマンス評価は実際の数値に基づいて判定**
+
+            今すぐGA4 MCPサーバーからデータを取得し、実用的な分析レポートをIssueに投稿してください！
