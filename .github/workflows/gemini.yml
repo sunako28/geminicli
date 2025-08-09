@@ -1,4 +1,4 @@
-name: GA4 Official MCP Analysis
+name: GA4 Hybrid Analysis (MCP + Direct API)
 on:
   workflow_dispatch:
     inputs:
@@ -17,7 +17,7 @@ on:
     types: [created]
 
 jobs:
-  ga4-official-mcp-analysis:
+  ga4-hybrid-analysis:
     if: |
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'schedule' ||
@@ -27,9 +27,142 @@ jobs:
     permissions:
       contents: read
       issues: write
-      id-token: write
     
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          
+      - name: Get GA4 Data (Fallback Method)
+        id: get-ga4-data
+        run: |
+          npm install @google-analytics/data
+          
+          cat > get-ga4-data.js << 'EOF'
+          const { BetaAnalyticsDataClient } = require('@google-analytics/data');
+          
+          async function getGA4Data() {
+            try {
+              const credentials = JSON.parse(process.env.GOOGLE_ANALYTICS_CREDENTIALS);
+              const client = new BetaAnalyticsDataClient({ credentials });
+              const propertyId = process.env.GA_PROPERTY_ID;
+              const dateRange = process.env.DATE_RANGE || 'yesterday';
+              
+              console.log('📊 GA4データ取得開始...');
+              console.log(`🎯 プロパティID: ${propertyId}`);
+              console.log(`📅 対象期間: ${dateRange}`);
+              
+              // 基本指標取得
+              const [basicReport] = await client.runReport({
+                property: `properties/${propertyId}`,
+                dateRanges: [{ startDate: dateRange, endDate: dateRange }],
+                metrics: [
+                  { name: 'activeUsers' },
+                  { name: 'sessions' },
+                  { name: 'screenPageViews' },
+                  { name: 'averageSessionDuration' }
+                ]
+              });
+              
+              // ページビュー取得
+              const [pageReport] = await client.runReport({
+                property: `properties/${propertyId}`,
+                dateRanges: [{ startDate: dateRange, endDate: dateRange }],
+                dimensions: [{ name: 'pagePath' }],
+                metrics: [{ name: 'screenPageViews' }],
+                orderBys: [{ metric: { metricName: 'screenPageViews' }, desc: true }],
+                limit: 10
+              });
+              
+              // イベント取得
+              const [eventReport] = await client.runReport({
+                property: `properties/${propertyId}`,
+                dateRanges: [{ startDate: dateRange, endDate: dateRange }],
+                dimensions: [{ name: 'eventName' }],
+                metrics: [{ name: 'eventCount' }],
+                orderBys: [{ metric: { metricName: 'eventCount' }, desc: true }],
+                limit: 10
+              });
+              
+              // データ整理
+              const data = {
+                date: dateRange,
+                timestamp: new Date().toISOString(),
+                propertyId: propertyId,
+                metrics: {},
+                pages: [],
+                events: []
+              };
+              
+              // 基本指標
+              if (basicReport.rows && basicReport.rows[0]) {
+                const row = basicReport.rows[0];
+                data.metrics = {
+                  activeUsers: parseInt(row.metricValues[0].value) || 0,
+                  sessions: parseInt(row.metricValues[1].value) || 0,
+                  pageViews: parseInt(row.metricValues[2].value) || 0,
+                  avgSessionDuration: Math.round(parseFloat(row.metricValues[3].value)) || 0
+                };
+              }
+              
+              // ページデータ
+              if (pageReport.rows) {
+                data.pages = pageReport.rows.slice(0, 10).map(row => ({
+                  path: row.dimensionValues[0].value,
+                  views: parseInt(row.metricValues[0].value)
+                }));
+              }
+              
+              // イベントデータ
+              if (eventReport.rows) {
+                data.events = eventReport.rows.slice(0, 10).map(row => ({
+                  name: row.dimensionValues[0].value,
+                  count: parseInt(row.metricValues[0].value)
+                }));
+              }
+              
+              // GitHub Output形式で出力
+              const output = `GA4_DATA<<EOF\n${JSON.stringify(data, null, 2)}\nEOF`;
+              require('fs').appendFileSync(process.env.GITHUB_OUTPUT, output);
+              
+              console.log('✅ GA4データ取得完了');
+              console.log(`📈 アクティブユーザー: ${data.metrics.activeUsers}`);
+              console.log(`📄 ページビュー: ${data.metrics.pageViews}`);
+              console.log(`🎯 イベント種類: ${data.events.length}`);
+              console.log(`📊 人気ページ: ${data.pages.length}`);
+              
+            } catch (error) {
+              console.error('❌ GA4データ取得エラー:', error.message);
+              
+              // エラー時も基本情報で継続
+              const errorData = {
+                date: process.env.DATE_RANGE || 'yesterday',
+                timestamp: new Date().toISOString(),
+                propertyId: process.env.GA_PROPERTY_ID,
+                error: error.message,
+                metrics: { activeUsers: 0, sessions: 0, pageViews: 0, avgSessionDuration: 0 },
+                pages: [],
+                events: []
+              };
+              
+              const output = `GA4_DATA<<EOF\n${JSON.stringify(errorData, null, 2)}\nEOF`;
+              require('fs').appendFileSync(process.env.GITHUB_OUTPUT, output);
+            }
+          }
+          
+          getGA4Data();
+          EOF
+          
+          node get-ga4-data.js
+        env:
+          GA_PROPERTY_ID: ${{ secrets.GA_PROPERTY_ID }}
+          GOOGLE_ANALYTICS_CREDENTIALS: ${{ secrets.GA_CREDENTIALS }}
+          DATE_RANGE: ${{ github.event.inputs.date_range || 'yesterday' }}
+          
       - name: Setup Python for MCP
         uses: actions/setup-python@v4
         with:
@@ -40,7 +173,7 @@ jobs:
           python -m pip install --user pipx
           python -m pipx ensurepath
           
-      - name: Run GA4 Official MCP Analysis
+      - name: Generate Analysis with MCP Assistance
         uses: google-gemini/gemini-cli-action@main
         env:
           GH_TOKEN: ${{ github.token }}
@@ -59,125 +192,94 @@ jobs:
                     "google-analytics-mcp"
                   ],
                   "env": {
-                    "GOOGLE_APPLICATION_CREDENTIALS_JSON": "$GOOGLE_APPLICATION_CREDENTIALS_JSON",
-                    "GA_PROPERTY_ID": "${{ secrets.GA_PROPERTY_ID }}"
+                    "GOOGLE_APPLICATION_CREDENTIALS_JSON": "$GOOGLE_APPLICATION_CREDENTIALS_JSON"
                   }
                 }
               }
             }
           prompt: |
-            あなたはGA4データ分析の専門家です。Google公式のGA4 MCPサーバーを使用してデータ分析を行います。
+            あなたはGA4データ分析の専門家です。以下の取得済みデータを分析してGitHub Issueを作成してください。
+
+            ## 📊 取得済みGA4データ
+
+            ```json
+            ${{ steps.get-ga4-data.outputs.GA4_DATA }}
+            ```
 
             ## 🎯 あなたの任務
 
-            GA4プロパティID **${{ secrets.GA_PROPERTY_ID }}** を使用して分析を行います。
-
-            1. **利用可能な機能を確認してください:**
-               ```
-               what can the analytics-mcp server do?
-               ```
-
-            2. **指定されたプロパティの詳細を取得してください:**
-               ```
-               give me details about GA4 property ID ${{ secrets.GA_PROPERTY_ID }}
-               ```
-
-            3. **${{ github.event.inputs.date_range || 'yesterday' }}の期間で以下のレポートを実行してください:**
-
-               **ページビューレポート（プロパティID指定）:**
-               ```
-               run a report for property ${{ secrets.GA_PROPERTY_ID }} for the date range ${{ github.event.inputs.date_range || 'yesterday' }} showing page views by page path, ordered by views descending, limit 10
-               ```
-
-               **イベントレポート（プロパティID指定）:**
-               ```
-               run a report for property ${{ secrets.GA_PROPERTY_ID }} for the date range ${{ github.event.inputs.date_range || 'yesterday' }} showing event count by event name, ordered by count descending, limit 10
-               ```
-
-               **基本指標レポート（プロパティID指定）:**
-               ```
-               run a report for property ${{ secrets.GA_PROPERTY_ID }} for the date range ${{ github.event.inputs.date_range || 'yesterday' }} showing active users, sessions, screen page views, and average session duration
-               ```
-
-            4. **分析結果をGitHub Issueに投稿してください:**
-
-            取得したデータを基に、以下のコマンドを**必ず実行**してください：
+            上記のGA4データを分析し、**必ず以下のコマンドを実行**してGitHub Issueを作成してください：
 
             ```
-            gh issue create --title "📊 GA4公式MCP分析レポート - $(date '+%Y-%m-%d')" --body "# 📊 GA4分析レポート（公式MCP版）
+            gh issue create --title "📊 GA4ハイブリッド分析レポート - $(date '+%Y-%m-%d')" --body "# 📊 GA4分析レポート（ハイブリッド版）
 
             ## 📅 分析概要
             - **対象期間**: ${{ github.event.inputs.date_range || 'yesterday' }}
             - **分析時刻**: $(date '+%Y-%m-%d %H:%M JST')
-            - **データソース**: Google Analytics 4 (公式MCP)
-            - **MCPサーバー**: analytics-mcp (Google公式)
+            - **プロパティID**: [JSONから抽出]
+            - **データソース**: GA4 API + MCP補助
+            - **取得方法**: Direct API (MCP補助あり)
 
             ## 📈 基本指標
 
             ### 📊 主要数値
-            [MCPから取得した実際のデータで置換]
-            - **アクティブユーザー**: [実際の数値] 人
-            - **セッション数**: [実際の数値] セッション
-            - **ページビュー**: [実際の数値] PV
-            - **平均セッション時間**: [実際の数値] 秒
+            [JSONデータから実際の数値を抽出して表示]
+            - **アクティブユーザー**: [activeUsers] 人
+            - **セッション数**: [sessions] セッション
+            - **ページビュー**: [pageViews] PV
+            - **平均セッション時間**: [avgSessionDuration] 秒
 
             ## 🏆 TOP10データ
 
             ### 📄 人気ページ
-            [MCPから取得した実際のページデータでリスト作成]
-            1. [ページパス] - [PV数] views
-            2. [ページパス] - [PV数] views
-            3. [ページパス] - [PV数] views
-            (以下、実際のデータで10位まで)
+            [JSONのpagesデータから作成]
+            1. [path] - [views] views
+            2. [path] - [views] views
+            (実際のデータで10位まで表示)
 
             ### 🎯 主要イベント
-            [MCPから取得した実際のイベントデータでリスト作成]
-            1. [イベント名] - [回数] 回
-            2. [イベント名] - [回数] 回
-            3. [イベント名] - [回数] 回
-            (以下、実際のデータで10位まで)
+            [JSONのeventsデータから作成]
+            1. [name] - [count] 回
+            2. [name] - [count] 回
+            (実際のデータで10位まで表示)
 
-            ## 💡 データに基づく改善提案
+            ## 💡 データドリブン改善提案
 
-            ### 🚀 高パフォーマンス（活用推奨）
+            ### 🚀 即効性のある改善（今日中）
             [実際のデータ分析に基づいて]
-            - **最人気ページ**: [1位のページ]
-              - 💡 **活用案**: このページの成功要因を他ページに応用
-            - **主要イベント**: [1位のイベント]
-              - 💡 **活用案**: 同様のユーザーアクションを促進
+            - [ ] 最人気ページ「[1位のページ]」の成功要因を他ページに適用
+            - [ ] 低PVページの導線改善
+            - [ ] 主要イベント「[1位のイベント]」の発生率向上施策
 
-            ### ⚠️ 改善機会（対策推奨）
+            ### 📈 中期改善（今週中）
             [実際のデータ分析に基づいて]
-            - **低パフォーマンスページ**: [下位のページ]
-              - 🔧 **改善案**: コンテンツ見直し、SEO対策
-            - **少ないイベント**: [少ないイベント]
-              - 🔧 **改善案**: UI/UX改善、導線最適化
+            - [ ] SEO対策による自然流入増加
+            - [ ] ユーザビリティ改善によるセッション時間延長
+            - [ ] コンバージョン率向上施策
 
-            ## 📋 今日のアクションプラン
+            ## 📊 パフォーマンス評価
 
-            ### ✅ 即座にできる改善
-            - [ ] [具体的で実行可能なアクション]
-            - [ ] [具体的で実行可能なアクション]
-            - [ ] [具体的で実行可能なアクション]
-
-            ### 📈 今週の改善項目
-            - [ ] [中期的な改善アクション]
-            - [ ] [中期的な改善アクション]
-
-            ## 📊 データ品質評価
-
-            ### パフォーマンス評価
+            ### 総合評価
             [実際の数値に基づいて評価]
-            - **総合評価**: [優秀/良好/平均/要改善]
-            - **成長トレンド**: [増加/横ばい/減少]
-            - **注目点**: [特筆すべきデータポイント]
+            - **データ品質**: [良好/要改善]
+            - **トラフィック**: [多い/平均的/少ない]
+            - **エンゲージメント**: [高い/普通/低い]
 
-            ## 🔧 GA4 MCP機能活用
+            ### 成功指標
+            - **PV目標**: 前回比 +10%
+            - **セッション時間目標**: +15秒
+            - **イベント発生目標**: +20%
 
-            このレポートは以下のGoogle公式MCP機能を使用：
-            - **run_report**: 標準レポート実行
-            - **get_property_details**: プロパティ詳細取得
-            - **get_account_summaries**: アカウント概要取得
+            ## 🔧 技術詳細
+
+            ### データ取得方法
+            - **方法**: GA4 Data API (Direct)
+            - **MCP補助**: analytics-mcp (プロパティ確認用)
+            - **認証**: Service Account
+            - **期間**: ${{ github.event.inputs.date_range || 'yesterday' }}
+
+            ### 取得データ詳細
+            [エラーがあった場合はその詳細も記載]
 
             ## 🤖 次回分析コマンド
             - \`@gemini analyze\` - 今日の分析
@@ -185,18 +287,20 @@ jobs:
             - \`@gemini analyze 30days\` - 月間分析
 
             ---
-            **📊 データ取得**: Google公式MCP analytics-mcp  
+            **📊 データ取得**: $(date '+%Y-%m-%d %H:%M JST')  
             **🔄 次回自動実行**: 明日 10:00 JST  
-            **📈 改善目標**: 継続的な成長を目指す"
+            **📈 改善目標**: 継続的成長"
             ```
 
             ## ⚡ 重要な実行指示
 
-            1. **必ずGoogle公式のanalytics-mcp MCPサーバーを使用してください**
-            2. **実際のGA4データを取得して [実際の数値] [ページパス] [イベント名] を置換してください**
-            3. **データが取得できない場合は、その理由と対処法を明記してください**
-            4. **分析は実データに基づいて具体的で実用的にしてください**
-            5. **必ず gh issue create コマンドを実行してGitHub Issueを作成してください**
+            1. **JSONデータから実際の数値を抽出して表示してください**
+            2. **[activeUsers] [sessions] などを実際の数値で置換してください**
+            3. **pages配列とevents配列からTOP10リストを作成してください**
+            4. **エラーがあった場合はその詳細も記載してください**
+            5. **必ず gh issue create コマンドを実行してください**
             6. **実行完了後「Issue #XX を作成しました」と報告してください**
 
-            今すぐGoogle公式GA4 MCPサーバーを使用して分析を開始してください！
+            **MCPサーバーが利用可能であれば、追加の洞察やGA4の設定情報も取得してください。**
+
+            今すぐ実行してください！
