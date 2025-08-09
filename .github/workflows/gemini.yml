@@ -30,7 +30,7 @@ jobs:
                   "args": ["-y", "@modelcontextprotocol/server-ga4"],
                   "env": {
                     "GOOGLE_CLIENT_EMAIL": "$GOOGLE_SERVICE_ACCOUNT_EMAIL",
-                    "GA_PROPERTY_ID": "$GA_PROPERTY_ID"
+                    "GA_PROPERTY_ID": "$GA_PROPERTY_ID",
                     "GOOGLE_APPLICATION_CREDENTIALS": "/path/to/your/credentials.json"
                   }
                 }
