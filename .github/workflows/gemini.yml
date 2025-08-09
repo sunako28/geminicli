@@ -1,48 +1,28 @@
-name: Gemini GA4 Summary
+name: Gemini GA4 Summary (base64 key)
 
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: '0 23 * * *'
+    - cron: '0 23 * * *'  # 毎日 08:00 JST
 
 jobs:
   summarize-ga4:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+
     steps:
-      # 0) 念のため：過去に汚染した余計な環境を作らない（何も出力しない）
-
-      # 1) Base64鍵を復号 → マスク → マルチラインenvへ
-      - name: Decode & mask private key
+      - name: Decode GOOGLE_PRIVATE_KEY_B64 to env var
         run: |
-          set -euo pipefail
-          # 復号（GOOGLE_PRIVATE_KEY_B64 は 1行のbase64）
-          echo '${{ secrets.GOOGLE_PRIVATE_KEY_B64 }}' | base64 --decode > private_key.pem
-          chmod 600 private_key.pem
+          echo "GOOGLE_PRIVATE_KEY<<EOF" >> $GITHUB_ENV
+          echo "${{ secrets.GOOGLE_PRIVATE_KEY_B64 }}" | base64 -d >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
 
-          # マスク（base64原文／PEM／末尾改行なしPEM）
-          echo "::add-mask::${{ secrets.GOOGLE_PRIVATE_KEY_B64 }}"
-          echo "::add-mask::$(cat private_key.pem)"
-          perl -pe 'chomp if eof' private_key.pem > pk_noeol.pem
-          echo "::add-mask::$(cat pk_noeol.pem)"
-          rm -f pk_noeol.pem
-
-          # マルチライン環境変数に安全に格納（裸のEOF）
-          {
-            echo "GOOGLE_PRIVATE_KEY<<EOF"
-            cat private_key.pem
-            echo "EOF"
-          } >> "$GITHUB_ENV"
-
-          # 一時ファイルは削除
-          shred -u private_key.pem || rm -f private_key.pem
-
-      # 2) GA4要約（JS版 MCPサーバ）
-      - name: Run Gemini GA4 Summary via MCP
+      - name: Run Gemini GA4 Summary
         uses: google-gemini/gemini-cli-action@main
         env:
           GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
-          GOOGLE_PRIVATE_KEY: ${{ env.GOOGLE_PRIVATE_KEY }}   # 復号後PEM（マスク済み）
-          GA_PROPERTY_ID: ${{ secrets.GA_PROPERTY_ID }}       # 数字のみ
+          GOOGLE_PRIVATE_KEY: ${{ env.GOOGLE_PRIVATE_KEY }}
+          GA_PROPERTY_ID: ${{ secrets.GA_PROPERTY_ID }}
         with:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           settings_json: |
@@ -58,7 +38,9 @@ jobs:
                   }
                 }
               },
-              "coreTools": ["mcp__google-analytics__run_report"]
+              "coreTools": [
+                "mcp__google-analytics__run_report"
+              ]
             }
           prompt: |
             あなたはGA4の要約アシスタントです。
