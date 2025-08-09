@@ -3,51 +3,46 @@ name: Gemini GA4 Summary
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: '0 23 * * *'  # 毎日 08:00 JST（UTC 23:00）
+    - cron: '0 23 * * *'
 
 jobs:
   summarize-ga4:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      id-token: write
-      # issues: write  # ← Issue作成もするなら有効化
-
     steps:
-      # 1) GOOGLE_PRIVATE_KEY_B64 を復号 → マスク → 環境変数へ（マルチライン）
+      # 0) 念のため：過去に汚染した余計な環境を作らない（何も出力しない）
+
+      # 1) Base64鍵を復号 → マスク → マルチラインenvへ
       - name: Decode & mask private key
         run: |
           set -euo pipefail
-          # 復号（Secretsのbase64からPEMへ）
+          # 復号（GOOGLE_PRIVATE_KEY_B64 は 1行のbase64）
           echo '${{ secrets.GOOGLE_PRIVATE_KEY_B64 }}' | base64 --decode > private_key.pem
           chmod 600 private_key.pem
 
-          # マスク（base64原文／復号後PEM／末尾改行なしPEM）
+          # マスク（base64原文／PEM／末尾改行なしPEM）
           echo "::add-mask::${{ secrets.GOOGLE_PRIVATE_KEY_B64 }}"
           echo "::add-mask::$(cat private_key.pem)"
           perl -pe 'chomp if eof' private_key.pem > pk_noeol.pem
           echo "::add-mask::$(cat pk_noeol.pem)"
           rm -f pk_noeol.pem
 
-          # GITHUB_ENV にマルチラインで登録（裸の EOF）
+          # マルチライン環境変数に安全に格納（裸のEOF）
           {
             echo "GOOGLE_PRIVATE_KEY<<EOF"
             cat private_key.pem
             echo "EOF"
           } >> "$GITHUB_ENV"
 
-          # 復号ファイルは削除（痕跡を残さない）
+          # 一時ファイルは削除
           shred -u private_key.pem || rm -f private_key.pem
 
-      # 2) GA4要約（JS版 mcp-server-google-analytics 使用）
+      # 2) GA4要約（JS版 MCPサーバ）
       - name: Run Gemini GA4 Summary via MCP
-        id: ga4
         uses: google-gemini/gemini-cli-action@main
         env:
           GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
-          GOOGLE_PRIVATE_KEY: ${{ env.GOOGLE_PRIVATE_KEY }}   # ← 復号後のPEM（マスク済み）
-          GA_PROPERTY_ID: ${{ secrets.GA_PROPERTY_ID }}       # 数字のみのProperty ID
+          GOOGLE_PRIVATE_KEY: ${{ env.GOOGLE_PRIVATE_KEY }}   # 復号後PEM（マスク済み）
+          GA_PROPERTY_ID: ${{ secrets.GA_PROPERTY_ID }}       # 数字のみ
         with:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           settings_json: |
@@ -73,14 +68,3 @@ jobs:
             - 主なコンバージョンイベント
             を mcp__google-analytics__run_report で取得・要約してください。
             可能なら前日比/先週同曜日比も一言で補足してください。
-
-      # 3) （任意）Issue投稿
-      # - name: Create GitHub issue with summary
-      #   uses: actions/github-script@v7
-      #   permissions:
-      #     issues: write
-      #   with:
-      #     script: |
-      #       const title = `GA4 日次要約 (${new Date().toISOString().slice(0,10)})`;
-      #       const body = ${{ toJSON(steps.ga4.outputs.gemini_result) }};
-      #       await github.rest.issues.create({ owner: context.repo.owner, repo: context.repo.repo, title, body });
