@@ -1,31 +1,37 @@
-name: Gemini GA4 Summary (npx server)
+name: Gemini GA4 Summary
 
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: '0 23 * * *'  # 毎日 08:00 JST
+    - cron: '0 23 * * *'  # 毎日 日本時間 08:00（UTC 23:00）
 
 jobs:
   summarize-ga4:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      # issues: write # ← Issue投稿もしたい場合は有効化
+
     steps:
-      # 1) 改行復元して GITHUB_ENV に入れる
+      # 1) Secrets の \n 入り PRIVATE KEY を実改行へ復元して環境変数に格納
       - name: Prepare GOOGLE_PRIVATE_KEY with real newlines
         run: |
+          # \n → 実改行に変換
           printf '%b' "${{ secrets.GOOGLE_PRIVATE_KEY }}" > private_key.pem
-          {
-            echo "GOOGLE_PRIVATE_KEY<<'EOF'"
-            cat private_key.pem
-            echo "EOF"
-          } >> "$GITHUB_ENV"
+          # GITHUB_ENV のマルチライン（裸の EOF）で設定
+          echo "GOOGLE_PRIVATE_KEY<<EOF" >> $GITHUB_ENV
+          cat private_key.pem >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
 
-      # 2) gemini CLI 実行（npx サーバ利用）
+      # 2) Gemini CLI アクション + GA4 MCP を起動
       - name: Run Gemini GA4 Summary
+        id: ga4
         uses: google-gemini/gemini-cli-action@main
         env:
           GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
-          # ← 復元済みの鍵を参照
-          GOOGLE_PRIVATE_KEY: ${{ env.GOOGLE_PRIVATE_KEY }}
+          GOOGLE_PRIVATE_KEY: ${{ env.GOOGLE_PRIVATE_KEY }}   # ← 復元済みを参照
           GA_PROPERTY_ID: ${{ secrets.GA_PROPERTY_ID }}
         with:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -48,6 +54,26 @@ jobs:
             あなたはGA4の要約アシスタントです。
             環境変数 GA_PROPERTY_ID で指定されたプロパティについて、プロパティのタイムゾーン（JST想定）で「昨日」のデータを取得し要約してください。
             - 主なトラフィックソース（source/medium）
-            - 人気ページ（pagePath等）
+            - 人気ページ（pagePath 等）
             - 主なコンバージョンイベント
             必要に応じて mcp__google-analytics__run_report を複数回呼び、短い段落＋箇条書きでまとめてください。
+            可能なら先週同曜日比/前日比も一言で補足してください。
+
+      # 3) （任意）結果を Issue に投稿
+      # - name: Create GitHub issue with summary
+      #   if: always()
+      #   permissions:
+      #     issues: write
+      #   uses: actions/github-script@v7
+      #   with:
+      #     script: |
+      #       const today = new Date().toISOString().slice(0,10);
+      #       const title = `GA4 日次要約 (${today})`;
+      #       // gemini-cli-action の出力は "gemini_result"（実行ログ準拠）
+      #       const body = ${{ toJSON(steps.ga4.outputs.gemini_result) }};
+      #       await github.rest.issues.create({
+      #         owner: context.repo.owner,
+      #         repo: context.repo.repo,
+      #         title,
+      #         body: body && body.trim() ? body : '要約の生成に失敗しました。設定（権限/プロパティID/認証）をご確認ください。'
+      #       });
