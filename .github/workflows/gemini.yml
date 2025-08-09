@@ -1,32 +1,13 @@
+name: GA4 MCP Connection Test
 on:
-  workflow_dispatch:
-    inputs:
-      date_range:
-        description: '分析期間'
-        required: false
-        default: 'yesterday'
-        type: choice
-        options:
-        - 'yesterday'
-        - '7daysAgo'
-        - '30daysAgo'
-  schedule:
-    - cron: '0 1 * * *'  # 毎日日本時間10時（UTC 1時）
-  issue_comment:
-    types: [created]
+  workflow_dispatch: {}
 
 jobs:
-  ga4-simple-pageviews:
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'schedule' ||
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@gemini pv'))
+  ga4-mcp-test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
-      issues: write
-      id-token: write
     
     steps:
       - name: Setup Python for MCP
@@ -38,11 +19,11 @@ jobs:
         run: |
           python -m pip install --user pipx
           python -m pipx ensurepath
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
           
-      - name: GA4 Simple PageViews Analysis
+      - name: Test GA4 MCP Connection
         uses: google-gemini/gemini-cli-action@main
         env:
-          GH_TOKEN: ${{ github.token }}
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GA_CREDENTIALS }}
         with:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -70,54 +51,84 @@ jobs:
               ]
             }
           prompt: |
-            GA4からページビュー数のみ取得して分析結果を教えてください。
+            ## 🔧 GA4 MCP接続テスト
 
-            ## 🎯 シンプルな任務
+            以下の順序でGA4 MCPサーバーをテストしてください：
 
-            **ページビュー数の取得のみ** 行ってください：
+            ### 1. MCPサーバー状況確認
+            ```
+            MCPサーバーの接続状況を教えてください
+            ```
 
-            1. **まず利用可能なツールを確認:**
-               ```
-               what MCP tools are available from analytics-mcp server?
-               ```
+            ### 2. 利用可能ツール確認
+            ```
+            analytics-mcp から利用可能なツールをすべてリストアップしてください
+            ```
 
-            2. **基本のページビュー数を取得:**
-               ```
-               use mcp__analytics-mcp__run_report to get total page views for property ${{ secrets.GA_PROPERTY_ID }} for date range ${{ github.event.inputs.date_range || 'yesterday' }}
-               ```
+            ### 3. プロパティ詳細取得テスト
+            ```
+            mcp__analytics-mcp__get_property_details を使ってプロパティ ${{ secrets.GA_PROPERTY_ID }} の詳細を取得してください
+            ```
 
-            3. **結果を報告:**
-               
-               データ取得後、以下の形式で結果を報告してください：
+            ### 4. アカウント概要取得テスト
+            ```
+            mcp__analytics-mcp__get_account_summaries を使ってアカウント情報を取得してください
+            ```
 
-               ```
-               📊 GA4ページビュー数レポート
+            ### 5. シンプルレポートテスト
+            ```
+            mcp__analytics-mcp__run_report を使って、プロパティ ${{ secrets.GA_PROPERTY_ID }} の昨日のページビュー数を取得してください
+            ```
 
-               ## 📅 基本情報
-               - 対象日: ${{ github.event.inputs.date_range || 'yesterday' }}
-               - 取得時刻: [現在時刻]
-               - プロパティID: ${{ secrets.GA_PROPERTY_ID }}
+            ## 📊 結果レポート
 
-               ## 📈 ページビュー数
+            各テストの結果を以下の形式で報告してください：
 
-               総ページビュー: [実際の数値] PV
+            ```
+            # 🔧 GA4 MCP接続テスト結果
 
-               ## 💡 ひとこと分析
+            ## ✅ テスト実行状況
 
-               [数値に基づいた簡単なコメント]
+            ### 1. MCPサーバー接続
+            状況: [成功/失敗/不明]
+            詳細: [接続状況の詳細]
 
-               ## 🔧 MCPサーバー状況
-               - サーバー接続: [成功/失敗]
-               - ツール利用: [利用できたツール名]
-               - データ取得: [成功/失敗]
-               ```
+            ### 2. 利用可能ツール
+            状況: [成功/失敗]
+            ツール数: [確認できた数]
+            主要ツール: [主要なツール名]
+
+            ### 3. プロパティ詳細取得
+            状況: [成功/失敗]
+            プロパティ名: [取得できた場合は名前]
+            エラー: [失敗した場合はエラー内容]
+
+            ### 4. アカウント概要取得
+            状況: [成功/失敗]
+            アカウント数: [取得できた場合は数]
+            エラー: [失敗した場合はエラー内容]
+
+            ### 5. レポート実行
+            状況: [成功/失敗]
+            ページビュー数: [取得できた場合は数値]
+            エラー: [失敗した場合はエラー内容]
+
+            ## 🎯 総合判定
+
+            総合結果: [全て成功/部分的成功/接続失敗]
+
+            ## 🔧 次のステップ
+
+            [成功した場合は分析機能追加を提案]
+            [失敗した場合は問題箇所と対処法を提案]
+            ```
 
             ## ⚡ 重要な指示
 
-            1. **ページビュー数のみ取得** - 他の複雑なデータは不要
-            2. **[実際の数値]を実際のページビュー数で置換**
-            3. **エラーが出たら詳細なエラー情報を含めて報告**
-            4. **MCPサーバーの接続状況も報告**
-            5. **シンプルで短いレポートにする**
+            1. **各テストを順番に実行してください**
+            2. **エラーが出ても次のテストに進んでください**
+            3. **実際の結果で [成功/失敗] を置き換えてください**
+            4. **エラーの詳細情報も必ず含めてください**
+            5. **最後に総合的な判定と次のステップを提案してください**
 
-            今すぐページビュー数を取得して結果を報告してください！
+            今すぐテストを開始してください！
