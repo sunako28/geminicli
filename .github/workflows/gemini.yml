@@ -59,7 +59,8 @@ jobs:
                     "google-analytics-mcp"
                   ],
                   "env": {
-                    "GOOGLE_APPLICATION_CREDENTIALS_JSON": "$GOOGLE_APPLICATION_CREDENTIALS_JSON"
+                    "GOOGLE_APPLICATION_CREDENTIALS_JSON": "$GOOGLE_APPLICATION_CREDENTIALS_JSON",
+                    "GA_PROPERTY_ID": "${{ secrets.GA_PROPERTY_ID }}"
                   }
                 }
               }
@@ -69,31 +70,33 @@ jobs:
 
             ## 🎯 あなたの任務
 
-            1. **まず利用可能な機能を確認してください:**
+            GA4プロパティID **${{ secrets.GA_PROPERTY_ID }}** を使用して分析を行います。
+
+            1. **利用可能な機能を確認してください:**
                ```
                what can the analytics-mcp server do?
                ```
 
-            2. **GA4プロパティの詳細を取得してください:**
+            2. **指定されたプロパティの詳細を取得してください:**
                ```
-               give me details about my Google Analytics properties
-               ```
-
-            3. **${{ github.event.inputs.date_range || 'yesterday' }}の期間で以下のデータを取得・分析してください:**
-
-               **ページビューレポート:**
-               ```
-               run a report for the last ${{ github.event.inputs.date_range || 'yesterday' }} showing page views by page path, ordered by views descending, limit 10
+               give me details about GA4 property ID ${{ secrets.GA_PROPERTY_ID }}
                ```
 
-               **イベントレポート:**
+            3. **${{ github.event.inputs.date_range || 'yesterday' }}の期間で以下のレポートを実行してください:**
+
+               **ページビューレポート（プロパティID指定）:**
                ```
-               run a report for the last ${{ github.event.inputs.date_range || 'yesterday' }} showing event count by event name, ordered by count descending, limit 10
+               run a report for property ${{ secrets.GA_PROPERTY_ID }} for the date range ${{ github.event.inputs.date_range || 'yesterday' }} showing page views by page path, ordered by views descending, limit 10
                ```
 
-               **ユーザー基本指標:**
+               **イベントレポート（プロパティID指定）:**
                ```
-               run a report for the last ${{ github.event.inputs.date_range || 'yesterday' }} showing active users, sessions, page views, and average session duration
+               run a report for property ${{ secrets.GA_PROPERTY_ID }} for the date range ${{ github.event.inputs.date_range || 'yesterday' }} showing event count by event name, ordered by count descending, limit 10
+               ```
+
+               **基本指標レポート（プロパティID指定）:**
+               ```
+               run a report for property ${{ secrets.GA_PROPERTY_ID }} for the date range ${{ github.event.inputs.date_range || 'yesterday' }} showing active users, sessions, screen page views, and average session duration
                ```
 
             4. **分析結果をGitHub Issueに投稿してください:**
