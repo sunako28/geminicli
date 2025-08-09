@@ -1,4 +1,4 @@
-name: GA4 MCP Analysis
+name: GA4 Official MCP Analysis
 on:
   workflow_dispatch:
     inputs:
@@ -17,106 +17,164 @@ on:
     types: [created]
 
 jobs:
-  ga4-analysis:
+  ga4-official-mcp-analysis:
     if: |
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'schedule' ||
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@gemini analyze'))
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: read
       issues: write
       id-token: write
     
     steps:
-      - name: Run GA4 MCP Analysis
+      - name: Setup Python for MCP
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          
+      - name: Install pipx
+        run: |
+          python -m pip install --user pipx
+          python -m pipx ensurepath
+          
+      - name: Run GA4 Official MCP Analysis
         uses: google-gemini/gemini-cli-action@main
         env:
           GH_TOKEN: ${{ github.token }}
-          GOOGLE_ANALYTICS_PROPERTY_ID: ${{ secrets.GA_PROPERTY_ID }}
-          GOOGLE_ANALYTICS_CREDENTIALS: ${{ secrets.GA_CREDENTIALS }}
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GA_CREDENTIALS }}
         with:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           settings_json: |
             {
               "mcpServers": {
-                "google-analytics": {
-                  "command": "npx",
-                  "args": ["-y", "@modelcontextprotocol/server-google-analytics"],
+                "analytics-mcp": {
+                  "command": "pipx",
+                  "args": [
+                    "run",
+                    "--spec",
+                    "git+https://github.com/googleanalytics/google-analytics-mcp.git",
+                    "google-analytics-mcp"
+                  ],
                   "env": {
-                    "GOOGLE_ANALYTICS_PROPERTY_ID": "$GOOGLE_ANALYTICS_PROPERTY_ID",
-                    "GOOGLE_ANALYTICS_CREDENTIALS": "$GOOGLE_ANALYTICS_CREDENTIALS"
+                    "GOOGLE_APPLICATION_CREDENTIALS_JSON": "$GOOGLE_APPLICATION_CREDENTIALS_JSON"
                   }
                 }
-              },
-              "coreTools": [
-                "mcp__google-analytics__getPageViews",
-                "mcp__google-analytics__getActiveUsers",
-                "mcp__google-analytics__getEvents",
-                "mcp__google-analytics__getUserBehavior",
-                "mcp__google-analytics__runReport"
-              ]
+              }
             }
           prompt: |
-            あなたは GA4 データ分析アシスタントです。
+            あなたはGA4データ分析の専門家です。Google公式のGA4 MCPサーバーを使用してデータ分析を行います。
 
-            ## 📊 実行手順
+            ## 🎯 あなたの任務
 
-            1. **GA4データを取得してください:**
-               - 対象期間: ${{ github.event.inputs.date_range || 'yesterday' }}
-               - ページビューデータ（上位10ページ）
-               - イベントデータ（上位10イベント）
-               - 基本的なユーザー指標
+            1. **まず利用可能な機能を確認してください:**
+               ```
+               what can the analytics-mcp server do?
+               ```
 
-            2. **データを分析して以下を特定してください:**
-               - 最も人気のページとPV数
-               - 最も発生したイベントと回数
-               - 改善が必要な低パフォーマンスエリア
-               - 成功している高パフォーマンスエリア
+            2. **GA4プロパティの詳細を取得してください:**
+               ```
+               give me details about my Google Analytics properties
+               ```
 
-            3. **必ずGitHub Issueを作成してください:**
+            3. **${{ github.event.inputs.date_range || 'yesterday' }}の期間で以下のデータを取得・分析してください:**
+
+               **ページビューレポート:**
+               ```
+               run a report for the last ${{ github.event.inputs.date_range || 'yesterday' }} showing page views by page path, ordered by views descending, limit 10
+               ```
+
+               **イベントレポート:**
+               ```
+               run a report for the last ${{ github.event.inputs.date_range || 'yesterday' }} showing event count by event name, ordered by count descending, limit 10
+               ```
+
+               **ユーザー基本指標:**
+               ```
+               run a report for the last ${{ github.event.inputs.date_range || 'yesterday' }} showing active users, sessions, page views, and average session duration
+               ```
+
+            4. **分析結果をGitHub Issueに投稿してください:**
 
             取得したデータを基に、以下のコマンドを**必ず実行**してください：
 
-            gh issue create --title "📊 GA4日次分析レポート - $(date '+%Y-%m-%d')" --body "# 📊 GA4分析レポート
+            ```
+            gh issue create --title "📊 GA4公式MCP分析レポート - $(date '+%Y-%m-%d')" --body "# 📊 GA4分析レポート（公式MCP版）
 
             ## 📅 分析概要
             - **対象期間**: ${{ github.event.inputs.date_range || 'yesterday' }}
-            - **分析実行時刻**: $(date '+%Y-%m-%d %H:%M:%S JST')
-            - **データソース**: Google Analytics 4 (MCP)
+            - **分析時刻**: $(date '+%Y-%m-%d %H:%M JST')
+            - **データソース**: Google Analytics 4 (公式MCP)
+            - **MCPサーバー**: analytics-mcp (Google公式)
 
             ## 📈 基本指標
 
             ### 📊 主要数値
-            - **アクティブユーザー**: [実際の数値で置換]
-            - **ページビュー**: [実際の数値で置換]
-            - **セッション数**: [実際の数値で置換]
-            - **平均セッション時間**: [実際の数値で置換]秒
+            [MCPから取得した実際のデータで置換]
+            - **アクティブユーザー**: [実際の数値] 人
+            - **セッション数**: [実際の数値] セッション
+            - **ページビュー**: [実際の数値] PV
+            - **平均セッション時間**: [実際の数値] 秒
 
-            ## 🏆 人気コンテンツ TOP5
+            ## 🏆 TOP10データ
 
             ### 📄 人気ページ
-            [実際のデータで置換してください]
+            [MCPから取得した実際のページデータでリスト作成]
+            1. [ページパス] - [PV数] views
+            2. [ページパス] - [PV数] views
+            3. [ページパス] - [PV数] views
+            (以下、実際のデータで10位まで)
 
             ### 🎯 主要イベント
-            [実際のデータで置換してください]
+            [MCPから取得した実際のイベントデータでリスト作成]
+            1. [イベント名] - [回数] 回
+            2. [イベント名] - [回数] 回
+            3. [イベント名] - [回数] 回
+            (以下、実際のデータで10位まで)
 
-            ## 💡 改善提案
+            ## 💡 データに基づく改善提案
 
-            [実際のデータ分析に基づいた改善提案を記載]
+            ### 🚀 高パフォーマンス（活用推奨）
+            [実際のデータ分析に基づいて]
+            - **最人気ページ**: [1位のページ]
+              - 💡 **活用案**: このページの成功要因を他ページに応用
+            - **主要イベント**: [1位のイベント]
+              - 💡 **活用案**: 同様のユーザーアクションを促進
+
+            ### ⚠️ 改善機会（対策推奨）
+            [実際のデータ分析に基づいて]
+            - **低パフォーマンスページ**: [下位のページ]
+              - 🔧 **改善案**: コンテンツ見直し、SEO対策
+            - **少ないイベント**: [少ないイベント]
+              - 🔧 **改善案**: UI/UX改善、導線最適化
 
             ## 📋 今日のアクションプラン
 
-            ### ✅ すぐできる改善（今日中）
-            - [ ] 人気ページの関連記事リンク追加
-            - [ ] 低PVページのタイトル確認
-            - [ ] 重要ボタンの配置確認
+            ### ✅ 即座にできる改善
+            - [ ] [具体的で実行可能なアクション]
+            - [ ] [具体的で実行可能なアクション]
+            - [ ] [具体的で実行可能なアクション]
 
             ### 📈 今週の改善項目
-            - [ ] SEO対策の実施
-            - [ ] ユーザビリティテスト
-            - [ ] コンテンツ更新計画
+            - [ ] [中期的な改善アクション]
+            - [ ] [中期的な改善アクション]
+
+            ## 📊 データ品質評価
+
+            ### パフォーマンス評価
+            [実際の数値に基づいて評価]
+            - **総合評価**: [優秀/良好/平均/要改善]
+            - **成長トレンド**: [増加/横ばい/減少]
+            - **注目点**: [特筆すべきデータポイント]
+
+            ## 🔧 GA4 MCP機能活用
+
+            このレポートは以下のGoogle公式MCP機能を使用：
+            - **run_report**: 標準レポート実行
+            - **get_property_details**: プロパティ詳細取得
+            - **get_account_summaries**: アカウント概要取得
 
             ## 🤖 次回分析コマンド
             - \`@gemini analyze\` - 今日の分析
@@ -124,14 +182,18 @@ jobs:
             - \`@gemini analyze 30days\` - 月間分析
 
             ---
-            **📊 データ取得**: MCP経由 GA4 API  
-            **🔄 次回自動実行**: 明日 10:00 JST"
+            **📊 データ取得**: Google公式MCP analytics-mcp  
+            **🔄 次回自動実行**: 明日 10:00 JST  
+            **📈 改善目標**: 継続的な成長を目指す"
+            ```
 
             ## ⚡ 重要な実行指示
 
-            1. **必ずGA4 MCPツールを使用してリアルデータを取得してください**
-            2. **取得したデータで [実際の数値で置換] の部分を実際の数値に置き換えてください**
-            3. **データ取得後、必ず上記の gh issue create コマンドを実行してください**
-            4. **コマンド実行が完了したら「Issue #[番号] を作成しました」と報告してください**
+            1. **必ずGoogle公式のanalytics-mcp MCPサーバーを使用してください**
+            2. **実際のGA4データを取得して [実際の数値] [ページパス] [イベント名] を置換してください**
+            3. **データが取得できない場合は、その理由と対処法を明記してください**
+            4. **分析は実データに基づいて具体的で実用的にしてください**
+            5. **必ず gh issue create コマンドを実行してGitHub Issueを作成してください**
+            6. **実行完了後「Issue #XX を作成しました」と報告してください**
 
-            今すぐ実行してください！
+            今すぐGoogle公式GA4 MCPサーバーを使用して分析を開始してください！
