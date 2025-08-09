@@ -1,4 +1,33 @@
-name: GA4 Simple PageViews
+- name: Create Issue from GA4 Data
+        if: always()
+        run: |
+          gh issue create \
+            --title "📊 GA4ページビュー数 - $(date '+%Y-%m-%d')" \
+            --body "# 📊 GA4ページビュー数
+
+          ## 📅 基本情報
+          - **対象日**: ${{ github.event.inputs.date_range || 'yesterday' }}
+          - **取得時刻**: $(date '+%Y-%m-%d %H:%M JST')
+          - **プロパティID**: ${{ secrets.GA_PROPERTY_ID }}
+
+          ## 📊 分析結果
+
+          **詳細はワークフロー実行ログを確認してください:**
+          - [ワークフロー実行結果](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+          ## 💡 MCPサーバーテスト
+
+          このワークフローではGA4公式MCPサーバーとの接続をテストしています。
+
+          ## 🤖 次回取得
+          - \`@gemini pv\` - ページビュー数再取得
+          - 明日10時に自動実行
+
+          ---
+          **📊 データソース**: GA4公式MCP  
+          **🕐 実行時刻**: $(date '+%Y-%m-%d %H:%M JST')"
+        env:
+          GH_TOKEN: ${{ github.token }}name: GA4 Simple PageViews
 on:
   workflow_dispatch:
     inputs:
@@ -71,7 +100,7 @@ jobs:
               ]
             }
           prompt: |
-            GA4からページビュー数のみ取得して簡単なレポートを作成してください。
+            GA4からページビュー数のみ取得して分析結果を教えてください。
 
             ## 🎯 シンプルな任務
 
@@ -87,41 +116,38 @@ jobs:
                use mcp__analytics-mcp__run_report to get total page views for property ${{ secrets.GA_PROPERTY_ID }} for date range ${{ github.event.inputs.date_range || 'yesterday' }}
                ```
 
-            2. **Issue作成:**
+            3. **結果を報告:**
                
-               データ取得後、以下のコマンドを**必ず実行**してください：
+               データ取得後、以下の形式で結果を報告してください：
 
                ```
-               gh issue create --title "📊 GA4ページビュー数 - $(date '+%Y-%m-%d')" --body "# 📊 GA4ページビュー数
+               📊 GA4ページビュー数レポート
 
-            ## 📅 基本情報
-            - **対象日**: ${{ github.event.inputs.date_range || 'yesterday' }}
-            - **取得時刻**: $(date '+%Y-%m-%d %H:%M JST')
-            - **プロパティID**: ${{ secrets.GA_PROPERTY_ID }}
+               ## 📅 基本情報
+               - 対象日: ${{ github.event.inputs.date_range || 'yesterday' }}
+               - 取得時刻: [現在時刻]
+               - プロパティID: ${{ secrets.GA_PROPERTY_ID }}
 
-            ## 📈 ページビュー数
+               ## 📈 ページビュー数
 
-            **総ページビュー**: [実際の数値] PV
+               総ページビュー: [実際の数値] PV
 
-            ## 💡 ひとこと分析
+               ## 💡 ひとこと分析
 
-            [数値に基づいた簡単なコメント]
+               [数値に基づいた簡単なコメント]
 
-            ## 🤖 次回取得
-            - \`@gemini pv\` - ページビュー数再取得
-            - 明日10時に自動実行
-
-            ---
-            **📊 データ**: GA4公式MCP  
-            **🕐 更新**: $(date '+%H:%M JST')"
+               ## 🔧 MCPサーバー状況
+               - サーバー接続: [成功/失敗]
+               - ツール利用: [利用できたツール名]
+               - データ取得: [成功/失敗]
                ```
 
             ## ⚡ 重要な指示
 
             1. **ページビュー数のみ取得** - 他の複雑なデータは不要
             2. **[実際の数値]を実際のページビュー数で置換**
-            3. **エラーが出たら「データ取得できませんでした」と記載**
-            4. **必ず gh issue create コマンドを実行**
+            3. **エラーが出たら詳細なエラー情報を含めて報告**
+            4. **MCPサーバーの接続状況も報告**
             5. **シンプルで短いレポートにする**
 
-            今すぐページビュー数を取得してIssueを作成してください！
+            今すぐページビュー数を取得して結果を報告してください！
