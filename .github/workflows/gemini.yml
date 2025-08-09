@@ -3,25 +3,32 @@ name: Gemini GA4 Summary
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: '0 23 * * *'  # 毎日 日本時間08:00（UTC 23:00）
+    - cron: '0 23 * * *'  # 毎日 08:00 JST
 
 jobs:
   summarize-ga4:
     runs-on: ubuntu-latest
-    steps:
-      # 秘密鍵（\n入り1行）→ 実改行へ復元し、環境変数に安全格納
-      - name: Prepare GOOGLE_PRIVATE_KEY (multiline)
-        run: |
-          printf '%b' "${{ secrets.GOOGLE_PRIVATE_KEY }}" > private_key.pem
-          echo "GOOGLE_PRIVATE_KEY<<EOF" >> $GITHUB_ENV
-          cat private_key.pem >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
 
-      - name: Run Gemini GA4 Summary via MCP (JS server)
+    steps:
+      # 1) 秘密鍵を複数パターンでマスク（完全一致のみ有効なので念入りに）
+      - name: Mask private key variants
+        run: |
+          # 元の1行（\n入り）をマスク
+          echo "::add-mask::${{ secrets.GOOGLE_PRIVATE_KEY }}"
+          # 改行復元版をマスク
+          printf '%b' "${{ secrets.GOOGLE_PRIVATE_KEY }}" > pk.pem
+          echo "::add-mask::$(cat pk.pem)"
+          # 末尾改行なし版をマスク（出力形態の差異に備える）
+          perl -pe 'chomp if eof' pk.pem > pk_noeol.pem
+          echo "::add-mask::$(cat pk_noeol.pem)"
+          rm -f pk.pem pk_noeol.pem
+
+      # 2) GA4要約（JS版 mcp-server-google-analytics 使用）
+      - name: Run Gemini GA4 Summary via MCP
         uses: google-gemini/gemini-cli-action@main
         env:
           GOOGLE_CLIENT_EMAIL: ${{ secrets.GOOGLE_CLIENT_EMAIL }}
-          GOOGLE_PRIVATE_KEY: ${{ env.GOOGLE_PRIVATE_KEY }}
+          GOOGLE_PRIVATE_KEY: ${{ secrets.GOOGLE_PRIVATE_KEY }}   # ← GITHUB_ENVは使わない
           GA_PROPERTY_ID: ${{ secrets.GA_PROPERTY_ID }}
         with:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
